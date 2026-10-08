@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { AlarmClock, AlarmClockOff } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { applyLeadFilters, getLookups, getSetting, LEAD_FILTER_KEYS, type LeadFilters } from "@/lib/data";
@@ -33,6 +34,14 @@ export default async function LeadListPage({ searchParams }: { searchParams: Sea
     .range((page - 1) * size, page * size - 1);
   const [{ data, count, error }, maskSetting] = await Promise.all([query, getSetting(supabase, "mask_contacts_in_list", true)]);
 
+  // A page number past the end (stale bookmark, or rows removed by a filter/delete) makes
+  // PostgREST reject the range; send the user to the first page instead of showing an error.
+  if (error?.code === "PGRST103" && page > 1) {
+    const sp1 = new URLSearchParams();
+    Object.entries({ ...filters, size: String(size), sort, dir: asc ? "asc" : "desc" }).forEach(([k, v]) => v && sp1.set(k, v));
+    redirect(`/leads?${sp1}`);
+  }
+
   const masked = maskSetting && profile.role !== "admin";
   const rows: LeadRow[] = ((data ?? []) as unknown as Record<string, unknown>[]).map((l) => ({
     id: l.id as string,
@@ -58,8 +67,9 @@ export default async function LeadListPage({ searchParams }: { searchParams: Sea
 
   const params: Record<string, string | undefined> = { ...filters, size: String(size), sort, dir: asc ? "asc" : "desc" };
   const followupHref = (v: "today" | "missed") => {
+    // toggles this one filter and keeps every other filter, the sort and the page size
     const s = new URLSearchParams();
-    if (filters.followup !== v) s.set("followup", v);
+    Object.entries({ ...params, followup: filters.followup === v ? undefined : v }).forEach(([k, val]) => val && s.set(k, val));
     return `/leads?${s}`;
   };
 

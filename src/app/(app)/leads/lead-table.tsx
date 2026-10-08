@@ -4,7 +4,7 @@ import { useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, RefreshCw, SquarePen } from "lucide-react";
-import { Badge, Button, Empty, Select } from "@/components/ui";
+import { Badge, Button, Empty, Modal, Select } from "@/components/ui";
 import { notify } from "@/components/toast";
 import type { Role } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -73,6 +73,8 @@ export function LeadTable({ rows, params, role, stages, users }: { rows: LeadRow
   const [showCols, setShowCols] = useState(false);
   const [colSearch, setColSearch] = useState("");
   const [pending, start] = useTransition();
+  // deleting is irreversible, so it always goes through an explicit confirmation
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // selection only makes sense for the rows currently on screen
   const [seenRows, setSeenRows] = useState(rows);
@@ -130,10 +132,7 @@ export function LeadTable({ rows, params, role, stages, users }: { rows: LeadRow
               <Button
                 variant="danger"
                 disabled={pending}
-                onClick={() => {
-                  // native confirm keeps an irreversible delete from being a single mis-click
-                  if (window.confirm(`Delete ${ids.length} lead(s) and all their history? This cannot be undone.`)) run(() => deleteLeads(ids));
-                }}
+                onClick={() => setConfirmDelete(true)}
               >
                 Delete
               </Button>
@@ -173,6 +172,29 @@ export function LeadTable({ rows, params, role, stages, users }: { rows: LeadRow
           )}
         </div>
       </div>
+
+      {confirmDelete && (
+        <Modal title="Delete leads" onClose={() => setConfirmDelete(false)}>
+          <p>
+            Delete <b>{ids.length}</b> lead(s) and all their history (calls, follow-ups, messages, enrolments)? This cannot be undone.
+          </p>
+          <div className="mt-5 flex gap-2">
+            <Button
+              variant="danger"
+              disabled={pending}
+              onClick={() => {
+                setConfirmDelete(false);
+                run(() => deleteLeads(ids));
+              }}
+            >
+              Yes, delete
+            </Button>
+            <Button variant="outline" onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </Button>
+          </div>
+        </Modal>
+      )}
 
       <div className="max-h-[calc(100vh-320px)] min-h-64 overflow-auto">
         <table className="table-grid w-full border-collapse">

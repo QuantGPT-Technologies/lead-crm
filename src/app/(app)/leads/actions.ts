@@ -167,7 +167,9 @@ export async function updateLead(id: string, section: LeadSection, values: Value
       type: stageChanged ? "stage_change" : "owner_id" in patch ? "assigned" : "updated",
       summary: stageChanged
         ? `${profile.full_name} moved ${lead.student_name} to ${display("stage_id", patch.stage_id, lk)}`
-        : `${profile.full_name} updated ${section} details of ${lead.student_name}`,
+        : "owner_id" in patch
+          ? `${profile.full_name} assigned ${lead.student_name} to ${patch.owner_id ? display("owner_id", patch.owner_id, lk) : "the unassigned pool"}`
+          : `${profile.full_name} updated ${section} details of ${lead.student_name}`,
       details: { fields: changes },
     },
   ]);

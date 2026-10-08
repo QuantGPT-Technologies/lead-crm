@@ -13,7 +13,7 @@ export function SourceChart({ data }: { data: { name: string; value: number }[] 
   return (
     <ResponsiveContainer width="100%" height={300}>
       <PieChart>
-        <Pie data={data} dataKey="value" nameKey="name" innerRadius={60} outerRadius={100} paddingAngle={2}>
+        <Pie isAnimationActive={false} data={data} dataKey="value" nameKey="name" innerRadius={60} outerRadius={100} paddingAngle={2}>
           {data.map((d, i) => (
             <Cell key={d.name} fill={COLORS[i % COLORS.length]} />
           ))}
@@ -49,20 +49,20 @@ export function ConversionChart({ data }: { data: { day: string; leads: number; 
         {kind === "Area" ? (
           <AreaChart data={data}>
             {common}
-            <Area type="monotone" dataKey="leads" name="Leads" stroke="#4f5bd5" fill="#4f5bd5" fillOpacity={0.2} />
-            <Area type="monotone" dataKey="enrolled" name="Enrolled" stroke="#16a34a" fill="#16a34a" fillOpacity={0.25} />
+            <Area isAnimationActive={false} type="monotone" dataKey="leads" name="Leads" stroke="#4f5bd5" fill="#4f5bd5" fillOpacity={0.2} />
+            <Area isAnimationActive={false} type="monotone" dataKey="enrolled" name="Enrolled" stroke="#16a34a" fill="#16a34a" fillOpacity={0.25} />
           </AreaChart>
         ) : kind === "Bar" ? (
           <BarChart data={data}>
             {common}
-            <Bar dataKey="leads" name="Leads" fill="#4f5bd5" />
-            <Bar dataKey="enrolled" name="Enrolled" fill="#16a34a" />
+            <Bar isAnimationActive={false} dataKey="leads" name="Leads" fill="#4f5bd5" />
+            <Bar isAnimationActive={false} dataKey="enrolled" name="Enrolled" fill="#16a34a" />
           </BarChart>
         ) : (
           <LineChart data={data}>
             {common}
-            <Line type="monotone" dataKey="leads" name="Leads" stroke="#4f5bd5" dot={false} strokeWidth={2} />
-            <Line type="monotone" dataKey="enrolled" name="Enrolled" stroke="#16a34a" dot={false} strokeWidth={2} />
+            <Line isAnimationActive={false} type="monotone" dataKey="leads" name="Leads" stroke="#4f5bd5" dot={false} strokeWidth={2} />
+            <Line isAnimationActive={false} type="monotone" dataKey="enrolled" name="Enrolled" stroke="#16a34a" dot={false} strokeWidth={2} />
           </LineChart>
         )}
       </ResponsiveContainer>
