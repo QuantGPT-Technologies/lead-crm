@@ -440,7 +440,7 @@ language sql stable as $$
     (select count(*) from call_logs c where c.user_id = p.id and c.called_at >= p_from and c.called_at < p_to),
     (select count(*) from call_logs c where c.user_id = p.id and c.outcome = 'connected' and c.called_at >= p_from and c.called_at < p_to),
     (select coalesce(sum(c.duration_sec), 0) from call_logs c where c.user_id = p.id and c.called_at >= p_from and c.called_at < p_to),
-    (select count(*) from tasks t where t.completed_by = p.id and t.completed_at >= p_from and t.completed_at < p_to),
+    (select count(*) from tasks t where t.completed_by = p.id and t.status = 'done' and t.completed_at >= p_from and t.completed_at < p_to),
     (select count(*) from enrollments e where e.created_by = p.id and e.created_at >= p_from and e.created_at < p_to),
     (select coalesce(sum(e.paid_amount), 0) from enrollments e where e.created_by = p.id and e.created_at >= p_from and e.created_at < p_to)
   from profiles p
