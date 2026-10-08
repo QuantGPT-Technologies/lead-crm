@@ -1,9 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
+  // Every page is per-user and behind login, so nothing is statically cached.
+  serverExternalPackages: ["firebase-admin"],
+  experimental: {
+    serverActions: { bodySizeLimit: "8mb" },
+  },
   turbopack: {
     rules: {
       "*.css": {
