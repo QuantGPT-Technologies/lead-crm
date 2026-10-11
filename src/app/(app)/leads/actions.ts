@@ -7,7 +7,7 @@ import { chunk, getLookups, getSetting, logActivity } from "@/lib/data";
 import { createAdminClient } from "@/lib/supabase/server";
 import { deliver } from "@/lib/messaging";
 import type { ActionResult, Lead, Lookups } from "@/lib/types";
-import { isValidEmail, isValidMobile, normalizeMobile } from "@/lib/utils";
+import { isDateString, isValidEmail, isValidMobile, normalizeMobile } from "@/lib/utils";
 
 type Values = Record<string, unknown>;
 
@@ -52,8 +52,15 @@ function clean(values: Values, fields: readonly string[]) {
   return out;
 }
 
+const GENDERS = ["male", "female", "other"];
+const PRIORITIES = ["hot", "warm", "cold"];
+
 function validate(v: Values): string | null {
   if ("student_name" in v && String(v.student_name ?? "").length < 2) return "Student name is required";
+  if ("student_name" in v && String(v.student_name).length > 200) return "Student name is too long (200 characters at most)";
+  if (v.gender && !GENDERS.includes(String(v.gender))) return "Gender is not valid";
+  if ("priority" in v && !PRIORITIES.includes(String(v.priority))) return "Priority is not valid";
+  if (v.dob && !isDateString(String(v.dob))) return "Date of birth is not valid";
   if ("mobile" in v && !isValidMobile(String(v.mobile ?? ""))) return "Enter a valid mobile number";
   if (v.alt_mobile && !isValidMobile(String(v.alt_mobile))) return "Alternate mobile is not valid";
   if (v.email && !isValidEmail(String(v.email))) return "Email is not valid";
@@ -61,6 +68,30 @@ function validate(v: Values): string | null {
     return "Experience must be between 0 and 60 years";
   if (v.dob && new Date(String(v.dob)) > new Date()) return "Date of birth cannot be in the future";
   return null;
+}
+
+/** Checks that every dropdown value sent is one of the active choices, so a stale or made-up id gets a clear message. */
+function refProblem(v: Values, lk: Lookups): string | null {
+  const known = (list: { id: string }[], id: unknown) => id == null || list.some((x) => x.id === id);
+  if (!known(lk.sources, v.source_id)) return "Source is not valid";
+  if (!known(lk.universities, v.university_id)) return "University is not valid";
+  if (!known(lk.courses, v.course_id)) return "Course is not valid";
+  if (!known(lk.stages, v.stage_id)) return "Stage is not valid";
+  if (!known(lk.subStages, v.sub_stage_id)) return "Sub Stage is not valid";
+  if (!known(lk.users, v.owner_id)) return "Lead Owner is not valid";
+  return null;
+}
+
+/** Whether `userId` could open a lead owned by `ownerId` - the same rule as the database policy. */
+async function canOpenLead(userId: string, ownerId: string | null) {
+  const admin = createAdminClient();
+  const { data: user } = await admin.from("profiles").select("role, is_active").eq("id", userId).maybeSingle();
+  if (!user?.is_active) return false;
+  if (user.role === "admin" || userId === ownerId) return true;
+  if (user.role !== "manager") return false;
+  if (!ownerId) return true;
+  const { data: owner } = await admin.from("profiles").select("manager_id").eq("id", ownerId).maybeSingle();
+  return owner?.manager_id === userId;
 }
 
 /** Turns an id into the name people see, for activity history. */
@@ -86,6 +117,7 @@ const dbError = (e: { code?: string; message: string }) =>
   e.code === "23505" ? "A lead with this mobile number already exists" : e.code === "42501" ? "You do not have permission to do this" : e.message;
 
 const isUuid = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v);
+const MAX_AMOUNT = 9_999_999_999; // money columns are numeric(12, 2)
 const idList = z.array(z.uuid()).min(1, "Select at least one lead").max(150, "Select at most 150 leads at a time");
 
 // ------------------------------------------------------------------ leads ---
@@ -100,10 +132,20 @@ export async function createLead(values: Values): Promise<ActionResult> {
 
   if (!isStaff(profile.role)) row.owner_id = profile.id; // agents always own the leads they add
   row.stage_id ??= lk.stages[0]?.id ?? null;
+  const badRef = refProblem(row, lk);
+  if (badRef) return { error: badRef };
+  const course = lk.courses.find((c) => c.id === row.course_id);
+  if (course && row.university_id && course.university_id !== row.university_id) return { error: "Selected course does not belong to the selected university" };
+  if (course) row.university_id = course.university_id;
+  const subStage = lk.subStages.find((s) => s.id === row.sub_stage_id);
+  if (subStage && subStage.stage_id !== row.stage_id) return { error: "Selected sub stage does not belong to the selected stage" };
   if (row.owner_id) row.allotted_at = new Date().toISOString();
   row.created_by = profile.id;
 
-  const { data, error } = await supabase.from("leads").insert(row).select("id, student_name").single();
+  // Staff may add a lead for any active user, the same as when they assign one, so their insert
+  // uses the service role; an agent's insert stays under row level security.
+  const db = isStaff(profile.role) ? createAdminClient() : supabase;
+  const { data, error } = await db.from("leads").insert(row).select("id, student_name").single();
   if (error) return { error: dbError(error) };
 
   await logActivity(supabase, [
@@ -121,8 +163,8 @@ export async function createLead(values: Values): Promise<ActionResult> {
 export async function updateLead(id: string, section: LeadSection, values: Values): Promise<ActionResult> {
   const { supabase, profile } = await getSession();
   const lk = await getLookups();
+  if (!Object.hasOwn(SECTIONS, section)) return { error: "Unknown section" };
   let fields: readonly string[] = SECTIONS[section];
-  if (!fields) return { error: "Unknown section" };
   if (section === "internals" && !isStaff(profile.role)) fields = ["internal_notes"];
 
   const patch = clean(values, fields);
@@ -151,6 +193,8 @@ export async function updateLead(id: string, section: LeadSection, values: Value
     else changes[LABELS[k] ?? k] = `${display(k, old, lk)} → ${display(k, v, lk)}`;
   }
   if (!Object.keys(patch).length) return { message: "No changes to save" };
+  const badRef = refProblem(patch, lk); // only what actually changed, so a lead keeping a since-retired value still saves
+  if (badRef) return { error: badRef };
   if ("owner_id" in patch) patch.allotted_at = patch.owner_id ? new Date().toISOString() : null;
 
   // An owner change can move the lead out of a manager's view, which RLS would reject; the
@@ -268,6 +312,8 @@ export async function rechurnLead(id: string, reason: string, ownerId: string | 
 
   const { data: lead } = await supabase.from("leads").select("rechurn_count, owner_id, stage_id").eq("id", id).maybeSingle();
   if (!lead) return { error: "Lead not found" };
+  const { data: enrolled } = await supabase.from("enrollments").select("id").eq("lead_id", id).maybeSingle();
+  if (enrolled) return { error: "This lead is enrolled, so it cannot be rechurned" };
   const rechurned = lk.subStages.find((s) => s.stage_id === first.id && /rechurn/i.test(s.name));
   const now = new Date().toISOString();
 
@@ -300,11 +346,22 @@ export async function rechurnLead(id: string, reason: string, ownerId: string | 
 
 // --------------------------------------------------------- lead actions ---
 
+/** The lead as the signed-in user may see it (row level security applies), or null. */
+async function visibleLead(supabase: Awaited<ReturnType<typeof getSession>>["supabase"], leadId: string) {
+  if (!isUuid(leadId)) return null;
+  const { data } = await supabase.from("leads").select("id, owner_id").eq("id", leadId).maybeSingle();
+  return data as { id: string; owner_id: string | null } | null;
+}
+
+/** Follow-ups are for later: a minute of slack covers a slow click, anything older is a mistake. */
+const isPast = (d: Date) => d.getTime() < Date.now() - 60_000;
+
 export async function addNote(leadId: string, text: string): Promise<ActionResult> {
   const { supabase, profile } = await getSession();
   const note = text.trim();
   if (!note) return { error: "Write a note first" };
   if (note.length > 4000) return { error: "Note is too long" };
+  if (!(await visibleLead(supabase, leadId))) return { error: "Lead not found" };
   const { error } = await supabase
     .from("lead_activities")
     .insert({ lead_id: leadId, actor_id: profile.id, type: "note", summary: `${profile.full_name} added a note`, details: { text: note } });
@@ -317,7 +374,12 @@ export async function addTask(leadId: string, v: { title: string; due_at: string
   const due = new Date(v.due_at);
   if (!title) return { error: "Task title is required" };
   if (Number.isNaN(due.getTime())) return { error: "Choose a due date and time" };
+  if (isPast(due)) return { error: "Choose a due time in the future" };
+  const lead = await visibleLead(supabase, leadId);
+  if (!lead) return { error: "Lead not found" };
   const assignee = isStaff(profile.role) && isUuid(v.assigned_to) ? v.assigned_to : profile.id;
+  if (assignee !== profile.id && !(await canOpenLead(assignee, lead.owner_id)))
+    return { error: "That user cannot open this lead, so the follow-up cannot be given to them" };
 
   const { error } = await supabase
     .from("tasks")
@@ -331,6 +393,8 @@ export async function addTask(leadId: string, v: { title: string; due_at: string
 
 export async function completeTask(taskId: string, status: "done" | "cancelled" = "done"): Promise<ActionResult> {
   const { supabase, profile } = await getSession();
+  if (status !== "done" && status !== "cancelled") return { error: "Unknown follow-up status" };
+  if (!isUuid(taskId)) return { error: "Follow-up not found or already closed" };
   const { data: task, error } = await supabase
     .from("tasks")
     .update({ status, completed_at: new Date().toISOString(), completed_by: profile.id })
@@ -357,7 +421,9 @@ export async function logCall(
   const duration = Math.max(0, Math.min(86_400, Math.round(Number(v.duration_sec) || 0)));
   const followup = v.followup_at ? new Date(v.followup_at) : null;
   if (followup && Number.isNaN(followup.getTime())) return { error: "Follow-up date is not valid" };
+  if (followup && isPast(followup)) return { error: "Choose a follow-up time in the future" };
 
+  if (!isUuid(leadId)) return { error: "Lead not found" };
   const { data: lead } = await supabase.from("leads").select("attempt_count").eq("id", leadId).maybeSingle();
   if (!lead) return { error: "Lead not found" };
 
@@ -371,7 +437,8 @@ export async function logCall(
   });
   if (error) return { error: dbError(error) };
 
-  await supabase.from("leads").update({ attempt_count: lead.attempt_count + 1, last_contacted_at: new Date().toISOString() }).eq("id", leadId);
+  // the counters are locked against direct edits in the database, so the app sets them with the service role
+  await createAdminClient().from("leads").update({ attempt_count: lead.attempt_count + 1, last_contacted_at: new Date().toISOString() }).eq("id", leadId);
   if (followup) {
     await supabase.from("tasks").insert({ lead_id: leadId, title: "Call back", due_at: followup.toISOString(), assigned_to: profile.id, created_by: profile.id });
   }
@@ -444,24 +511,27 @@ export async function enrollLead(
   const paid = Number(v.paid_amount);
   if (!(fee >= 0) || !(paid >= 0)) return { error: "Amounts must be zero or more" };
   if (paid > fee) return { error: "Paid amount cannot be more than the fee" };
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(v.enrolled_on)) return { error: "Choose the enrolment date" };
+  if (fee > MAX_AMOUNT) return { error: "Fee is too large" };
+  if (!isDateString(v.enrolled_on)) return { error: "Choose the enrolment date" };
   const won = lk.stages.find((s) => s.is_won);
   if (!won) return { error: "No stage is marked as 'won'. Add one in Configuration → Masters." };
+  if (!(await visibleLead(supabase, leadId))) return { error: "Lead not found" };
 
-  const { error } = await supabase.from("enrollments").upsert(
-    {
-      lead_id: leadId,
-      university_id: v.university_id,
-      course_id: v.course_id,
-      fee_amount: fee,
-      paid_amount: paid,
-      enrolled_on: v.enrolled_on,
-      enrollment_no: v.enrollment_no?.trim() || null,
-      notes: v.notes?.trim() || null,
-      created_by: profile.id,
-    },
-    { onConflict: "lead_id" },
-  );
+  const details = {
+    university_id: v.university_id,
+    course_id: v.course_id,
+    fee_amount: fee,
+    paid_amount: paid,
+    enrolled_on: v.enrolled_on,
+    enrollment_no: v.enrollment_no?.trim() || null,
+    notes: v.notes?.trim() || null,
+  };
+  // Saving an existing enrolment again (e.g. a manager correcting the fee) keeps the person
+  // who enrolled the lead, so the agent report still credits them.
+  const { data: existing } = await supabase.from("enrollments").select("id").eq("lead_id", leadId).maybeSingle();
+  const { error } = existing
+    ? await supabase.from("enrollments").update(details).eq("id", existing.id)
+    : await supabase.from("enrollments").insert({ ...details, lead_id: leadId, created_by: profile.id });
   if (error) return { error: dbError(error) };
 
   await supabase
@@ -483,9 +553,10 @@ export async function enrollLead(
 
 export async function updateEnrollmentPayment(id: string, paid: number): Promise<ActionResult> {
   const { supabase, profile } = await getSession();
+  if (!isUuid(id)) return { error: "Enrolment not found" };
   const { data: row } = await supabase.from("enrollments").select("lead_id, fee_amount").eq("id", id).maybeSingle();
   if (!row) return { error: "Enrolment not found" };
-  if (!(paid >= 0) || paid > Number(row.fee_amount)) return { error: "Paid amount must be between 0 and the fee" };
+  if (typeof paid !== "number" || !(paid >= 0) || paid > Number(row.fee_amount)) return { error: "Paid amount must be between 0 and the fee" };
   const { error } = await supabase.from("enrollments").update({ paid_amount: paid }).eq("id", id);
   if (error) return { error: dbError(error) };
   await logActivity(supabase, [{ lead_id: row.lead_id, actor_id: profile.id, type: "enrolled", summary: `${profile.full_name} updated paid amount to ${paid}` }]);
@@ -502,16 +573,29 @@ export async function saveOpportunity(
   const amount = Number(v.amount);
   const probability = Math.round(Number(v.probability));
   if (!(amount >= 0)) return { error: "Amount must be zero or more" };
+  if (amount > MAX_AMOUNT) return { error: "Amount is too large" };
   if (!(probability >= 0 && probability <= 100)) return { error: "Probability must be 0-100" };
   const status = ["open", "won", "lost"].includes(v.status ?? "") ? v.status : "open";
+  if (v.expected_close && !isDateString(v.expected_close)) return { error: "Expected close date is not valid" };
   const row = { title, amount, probability, status, expected_close: v.expected_close || null, notes: v.notes?.trim() || null };
 
-  const { error } = v.id
-    ? await supabase.from("opportunities").update(row).eq("id", v.id)
-    : await supabase.from("opportunities").insert({ ...row, lead_id: leadId, created_by: profile.id });
-  if (error) return { error: dbError(error) };
+  // History is written with the service role, so it must only follow a write that row level
+  // security let through - and it goes on the lead the opportunity really belongs to.
+  let ownerLeadId: string;
+  if (v.id) {
+    if (!isUuid(v.id)) return { error: "Opportunity not found" };
+    const { data, error } = await supabase.from("opportunities").update(row).eq("id", v.id).select("lead_id").maybeSingle();
+    if (error) return { error: dbError(error) };
+    if (!data) return { error: "Opportunity not found" };
+    ownerLeadId = data.lead_id;
+  } else {
+    if (!(await visibleLead(supabase, leadId))) return { error: "Lead not found" };
+    const { error } = await supabase.from("opportunities").insert({ ...row, lead_id: leadId, created_by: profile.id });
+    if (error) return { error: dbError(error) };
+    ownerLeadId = leadId;
+  }
   await logActivity(supabase, [
-    { lead_id: leadId, actor_id: profile.id, type: "opportunity", summary: `${profile.full_name} ${v.id ? "updated" : "created"} opportunity: ${title} (${status})` },
+    { lead_id: ownerLeadId, actor_id: profile.id, type: "opportunity", summary: `${profile.full_name} ${v.id ? "updated" : "created"} opportunity: ${title} (${status})` },
   ]);
   return done({ message: "Opportunity saved" });
 }

@@ -31,7 +31,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
             useGlobal={useGlobal}
             useOtp={requireOtp()}
             initialStep={globalDone ? "user" : "global"}
-            next={next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard"}
+            // only same-site paths: browsers read "/\host" and "/<tab>/host" as "//host", which would leave the site
+            next={next && /^\/(?!\/)[^\\\s]*$/.test(next) ? next : "/dashboard"}
             notice={one(sp.error) === "inactive" ? "Your account is not active. Contact your administrator." : undefined}
           />
           <p className="mt-10 text-center text-sm text-muted">

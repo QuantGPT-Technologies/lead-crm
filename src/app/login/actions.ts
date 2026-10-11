@@ -32,7 +32,8 @@ export async function userLogin(userId: string, password: string): Promise<StepR
     const id = userId.trim();
     const admin = createAdminClient();
     const lookup = admin.from("profiles").select("email, full_name, is_active");
-    const { data: profile } = await (id.includes("@") ? lookup.ilike("email", id) : lookup.ilike("emp_code", id)).maybeSingle();
+    // exact match only (both are stored in one case), so "%" or "_" cannot stand in for a user id
+    const { data: profile } = await (id.includes("@") ? lookup.eq("email", id.toLowerCase()) : lookup.eq("emp_code", id.toUpperCase())).maybeSingle();
     // Same message for "no such user" and "wrong password" so user ids cannot be probed.
     if (!profile) return { error: INVALID };
     if (!profile.is_active) return { error: "This account is deactivated. Contact your administrator." };

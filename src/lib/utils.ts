@@ -70,9 +70,16 @@ export function todayBounds() {
   return { start, end: addDays(start, 1) };
 }
 
+/** True for a yyyy-mm-dd string that is a real calendar date (2026-99-99 and 2026-02-31 are not). */
+export function isDateString(s: string | null | undefined): s is string {
+  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+
 /** Parses ?from=yyyy-mm-dd&to=yyyy-mm-dd (inclusive) with a default window of `days`. */
 export function dateRange(from: string | undefined, to: string | undefined, days = 30) {
-  const ok = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+  const ok = isDateString;
   const toStr = ok(to) ? to! : tzDateString();
   const fromStr = ok(from) ? from! : tzDateString(addDays(startOfDay(toStr), -(days - 1)));
   return { fromStr, toStr, from: startOfDay(fromStr), to: addDays(startOfDay(toStr), 1) };

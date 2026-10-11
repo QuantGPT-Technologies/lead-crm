@@ -14,6 +14,8 @@ You need Node.js 20+ and a free Supabase account.
 2. **Create a Supabase project** at https://supabase.com (New project).
 3. **Create the database**: Supabase Dashboard → SQL Editor → New query → paste the whole of
    [`supabase/schema.sql`](supabase/schema.sql) → Run. Run it once, on an empty project.
+   (A database created from an older copy of this file is brought up to date by running
+   [`supabase/upgrade-001-hardening.sql`](supabase/upgrade-001-hardening.sql) the same way.)
 4. **Add your keys**: copy `.env.example` to `.env.local` and fill in:
 
    | Variable | Where to find it |

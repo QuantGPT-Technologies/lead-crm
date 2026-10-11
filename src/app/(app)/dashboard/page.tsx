@@ -52,6 +52,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
 
   return (
     <div className="space-y-4">
+      {one(sp.denied) && (
+        <p role="alert" className="rounded-md bg-red-500/10 px-4 py-2.5 text-sm font-semibold text-red-600">
+          You do not have access to that page. Ask an admin if you need it.
+        </p>
+      )}
       <Card className="flex flex-wrap items-center gap-3 px-4 py-2.5">
         <h1 className="text-lg font-extrabold">Dashboard</h1>
         <Link href="/followups" className="text-sm font-semibold text-brand">

@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSession } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/server";
 import type { Lookups } from "@/lib/types";
-import { cleanSearch, todayBounds, startOfDay, addDays } from "@/lib/utils";
+import { cleanSearch, isDateString, todayBounds, startOfDay, addDays } from "@/lib/utils";
 
 /** Dropdown data used across the app. Loaded once per request. */
 export const getLookups = cache(async (): Promise<Lookups> => {
@@ -49,7 +49,6 @@ export const LEAD_FILTER_KEYS: (keyof LeadFilters)[] = [
   "q", "stage", "source", "owner", "university", "course", "product", "priority", "attempt", "followup", "from", "to", "batch",
 ];
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const UUID = /^[0-9a-f-]{36}$/i;
 
 /** Applies list filters to any query on `leads`. Ids are validated so bad URLs cannot break the query. */
@@ -80,8 +79,8 @@ export function applyLeadFilters<Q extends { eq: any; or: any; is: any; gte: any
   } else if (f.followup === "missed") {
     q = q.lt("next_followup_at", new Date().toISOString());
   }
-  if (f.from && DATE.test(f.from)) q = q.gte("created_at", startOfDay(f.from).toISOString());
-  if (f.to && DATE.test(f.to)) q = q.lt("created_at", addDays(startOfDay(f.to), 1).toISOString());
+  if (isDateString(f.from)) q = q.gte("created_at", startOfDay(f.from).toISOString());
+  if (isDateString(f.to)) q = q.lt("created_at", addDays(startOfDay(f.to), 1).toISOString());
   return q;
 }
 

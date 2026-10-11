@@ -208,37 +208,55 @@ export async function transferLeads(v: { from: string; to: string; count: number
 
 // ------------------------------------------------------------ masters -----
 
+const UUID = /^[0-9a-f-]{36}$/i;
+/** Own keys only: "constructor" or "toString" must not pass as a table name. */
+const isMaster = (table: unknown): table is MasterTable => typeof table === "string" && Object.hasOwn(MASTERS, table);
+
 export async function saveMaster(table: MasterTable, id: string | null, values: Record<string, unknown>): Promise<ActionResult> {
   const { supabase, profile } = await getSession();
   if (profile.role !== "admin") return { error: "Only admins can change configuration" };
+  if (!isMaster(table)) return { error: "Unknown table" };
+  if (id !== null && !UUID.test(String(id))) return { error: "That record no longer exists" };
   const def = MASTERS[table];
-  if (!def) return { error: "Unknown table" };
 
   const row: Record<string, unknown> = {};
   for (const f of def.fields) {
-    let v = values[f.name];
+    let v = values?.[f.name];
     if (f.type === "checkbox") v = v === true;
     else if (f.type === "number") v = v === "" || v == null ? (f.name === "sort_order" ? 0 : null) : Number(v);
     else v = typeof v === "string" && v.trim() !== "" ? v.trim() : null;
     if (f.required && (v == null || v === "")) return { error: `${f.label} is required` };
     if (f.type === "number" && v != null && !(Number(v) >= 0)) return { error: `${f.label} must be zero or more` };
+    if (f.type === "number" && v != null && Number(v) > (f.name === "sort_order" ? 100_000 : 9_999_999_999)) return { error: `${f.label} is too large` };
     if (f.choices && !f.choices.includes(String(v))) return { error: `${f.label} is not valid` };
     if (f.type === "color" && v == null) v = "#6366f1";
+    if (f.type === "color" && !/^#[0-9a-f]{6}$/i.test(String(v))) return { error: `${f.label} must be a colour like #6366f1` };
+    if (f.ref && v != null) {
+      const { data: target } = UUID.test(String(v)) ? await supabase.from(f.ref).select("id").eq("id", v).maybeSingle() : { data: null };
+      if (!target) return { error: `${f.label} is not valid` };
+    }
     row[f.name] = v;
   }
   if (row.is_won && row.is_lost) return { error: "A stage cannot be both won and lost" };
 
-  const { error } = id ? await supabase.from(table).update(row).eq("id", id) : await supabase.from(table).insert(row);
-  return error ? { error: msg(error) } : done({ message: "Saved" });
+  if (!id) {
+    const { error } = await supabase.from(table).insert(row);
+    return error ? { error: msg(error) } : done({ message: "Saved" });
+  }
+  const { data, error } = await supabase.from(table).update(row).eq("id", id).select("id");
+  if (error) return { error: msg(error) };
+  return data?.length ? done({ message: "Saved" }) : { error: "That record no longer exists" };
 }
 
 /** Masters are switched off instead of deleted so existing leads keep their history. */
 export async function setMasterActive(table: MasterTable, id: string, active: boolean): Promise<ActionResult> {
   const { supabase, profile } = await getSession();
   if (profile.role !== "admin") return { error: "Only admins can change configuration" };
-  if (!MASTERS[table]) return { error: "Unknown table" };
-  const { error } = await supabase.from(table).update({ is_active: active }).eq("id", id);
-  return error ? { error: msg(error) } : done({ message: active ? "Activated" : "Deactivated" });
+  if (!isMaster(table)) return { error: "Unknown table" };
+  if (!UUID.test(String(id))) return { error: "That record no longer exists" };
+  const { data, error } = await supabase.from(table).update({ is_active: !!active }).eq("id", id).select("id");
+  if (error) return { error: msg(error) };
+  return data?.length ? done({ message: active ? "Activated" : "Deactivated" }) : { error: "That record no longer exists" };
 }
 
 // -------------------------------------------------------------- users -----
@@ -246,6 +264,30 @@ export async function setMasterActive(table: MasterTable, id: string, active: bo
 const ROLES: Role[] = ["admin", "manager", "agent"];
 const passwordProblem = (p: string) =>
   p.length < 8 ? "Password must be at least 8 characters" : !/[a-zA-Z]/.test(p) || !/\d/.test(p) ? "Password must contain letters and numbers" : null;
+
+/**
+ * Checks a "reports to" choice: it must be an active manager or admin, and following the chain
+ * upwards from them must never come back to the user being saved.
+ */
+async function managerProblem(managerId: string | undefined, userId: string | null): Promise<string | null> {
+  if (!managerId) return null;
+  if (!UUID.test(managerId)) return "Choose a valid manager";
+  if (managerId === userId) return "A user cannot be their own manager";
+  const admin = createAdminClient();
+  let next: string | null = managerId;
+  for (let depth = 0; next && depth < 50; depth++) {
+    const { data }: { data: { role: Role; is_active: boolean; manager_id: string | null } | null } = await admin
+      .from("profiles")
+      .select("role, is_active, manager_id")
+      .eq("id", next)
+      .maybeSingle();
+    if (!data) return depth === 0 ? "Choose a valid manager" : null;
+    if (depth === 0 && (!data.is_active || data.role === "agent")) return "Reports to must be an active manager or admin";
+    if (data.manager_id === userId && userId) return "That would make these users report to each other";
+    next = data.manager_id;
+  }
+  return null;
+}
 
 export async function createUser(v: { full_name: string; email: string; password: string; role: string; manager_id?: string; phone?: string }): Promise<ActionResult> {
   const { profile } = await getSession();
@@ -256,6 +298,8 @@ export async function createUser(v: { full_name: string; email: string; password
   if (!ROLES.includes(v.role as Role)) return { error: "Choose a role" };
   const weak = passwordProblem(v.password ?? "");
   if (weak) return { error: weak };
+  const badManager = await managerProblem(v.manager_id, null);
+  if (badManager) return { error: badManager };
 
   const admin = createAdminClient();
   const { data, error } = await admin.auth.admin.createUser({ email, password: v.password, email_confirm: true });
@@ -279,14 +323,18 @@ export async function updateUser(id: string, v: { full_name: string; role: strin
   if (!v.full_name?.trim()) return { error: "Name is required" };
   if (!ROLES.includes(v.role as Role)) return { error: "Choose a role" };
   if (id === profile.id && (v.role !== "admin" || !v.is_active)) return { error: "You cannot remove your own admin access" };
-  if (v.manager_id === id) return { error: "A user cannot be their own manager" };
+  if (!UUID.test(String(id))) return { error: "User not found" };
+  const badManager = await managerProblem(v.manager_id, id);
+  if (badManager) return { error: badManager };
 
   const admin = createAdminClient();
-  const { error } = await admin
+  const { data: saved, error } = await admin
     .from("profiles")
-    .update({ full_name: v.full_name.trim(), role: v.role, manager_id: v.manager_id || null, phone: v.phone?.trim() || null, is_active: v.is_active })
-    .eq("id", id);
+    .update({ full_name: v.full_name.trim(), role: v.role, manager_id: v.manager_id || null, phone: v.phone?.trim() || null, is_active: !!v.is_active })
+    .eq("id", id)
+    .select("id");
   if (error) return { error: msg(error) };
+  if (!saved?.length) return { error: "User not found" };
   // block / unblock the login itself so a deactivated user's existing session stops refreshing
   await admin.auth.admin.updateUserById(id, { ban_duration: v.is_active ? "none" : "876000h" });
   return done({ message: "User updated" });

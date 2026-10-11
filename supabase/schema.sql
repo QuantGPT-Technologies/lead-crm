@@ -120,6 +120,14 @@ create table sub_stages (
   unique (stage_id, name)
 );
 
+-- names are unique whatever their case ("Website" and "website" are the same source)
+create unique index lead_sources_name_ci on lead_sources (lower(name));
+create unique index universities_name_ci on universities (lower(name));
+create unique index courses_name_ci on courses (university_id, lower(name));
+create unique index stage_funnels_name_ci on stage_funnels (lower(name));
+create unique index stages_name_ci on stages (funnel_id, lower(name));
+create unique index sub_stages_name_ci on sub_stages (stage_id, lower(name));
+
 create table message_templates (
   id uuid primary key default gen_random_uuid(),
   channel text not null check (channel in ('email', 'sms', 'whatsapp')),
@@ -212,6 +220,42 @@ create or replace function touch_updated_at() returns trigger language plpgsql a
 begin new.updated_at = now(); return new; end $$;
 create trigger leads_touch before update on leads for each row execute function touch_updated_at();
 
+-- Signed-in users calling the database directly may edit the business fields of the leads they
+-- can see, but not the bookkeeping the app maintains (numbers, counters, dates), and only
+-- managers and admins may change who owns a lead. The app sets these with the service role.
+create or replace function protect_lead_columns() returns trigger language plpgsql as $$
+begin
+  if current_user in ('authenticated', 'anon') then
+    if tg_op = 'INSERT' then
+      new.created_at := now();
+      new.updated_at := now();
+      new.created_by := auth.uid();
+      new.attempt_count := 0;
+      new.last_contacted_at := null;
+      new.rechurn_count := 0;
+      new.last_rechurned_at := null;
+      new.next_followup_at := null;
+    else
+      new.id := old.id;
+      new.lead_no := old.lead_no;
+      new.created_at := old.created_at;
+      new.created_by := old.created_by;
+      new.attempt_count := old.attempt_count;
+      new.last_contacted_at := old.last_contacted_at;
+      new.rechurn_count := old.rechurn_count;
+      new.last_rechurned_at := old.last_rechurned_at;
+      new.next_followup_at := old.next_followup_at;
+      new.upload_batch_id := old.upload_batch_id;
+      if not is_staff() then
+        new.owner_id := old.owner_id;
+        new.allotted_at := old.allotted_at;
+      end if;
+    end if;
+  end if;
+  return new;
+end $$;
+create trigger leads_protect before insert or update on leads for each row execute function protect_lead_columns();
+
 create table lead_activities (
   id uuid primary key default gen_random_uuid(),
   lead_id uuid not null references leads (id) on delete cascade,
@@ -293,9 +337,22 @@ create table enrollments (
   enrolled_on date not null default current_date,
   notes text,
   created_by uuid references profiles (id) on delete set null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint enrollments_amounts_check check (fee_amount >= 0 and paid_amount >= 0 and paid_amount <= fee_amount)
 );
 create index enrollments_date_idx on enrollments (enrolled_on desc);
+
+-- who enrolled a lead, and which lead an enrolment belongs to, cannot be rewritten directly
+create or replace function protect_enrollment_columns() returns trigger language plpgsql as $$
+begin
+  if current_user in ('authenticated', 'anon') then
+    new.lead_id := old.lead_id;
+    new.created_by := old.created_by;
+    new.created_at := old.created_at;
+  end if;
+  return new;
+end $$;
+create trigger enrollments_protect before update on enrollments for each row execute function protect_enrollment_columns();
 
 create table opportunities (
   id uuid primary key default gen_random_uuid(),
@@ -351,10 +408,9 @@ alter table opportunities     enable row level security;
 alter table lead_posts        enable row level security;
 alter table push_tokens       enable row level security;
 
--- profiles: everyone signed in can read names; only admins write (through the app server)
+-- profiles: everyone signed in can read names and roles (see the column grant at the end);
+-- every write goes through the app server with the service role
 create policy profiles_read on profiles for select to authenticated using (app_role() is not null);
-create policy profiles_admin on profiles for all to authenticated
-  using (app_role() = 'admin') with check (app_role() = 'admin');
 
 -- masters + settings: read for all active users, write for admins
 do $$
@@ -388,16 +444,22 @@ create policy leads_update on leads for update to authenticated
   using (can_access_lead(owner_id)) with check (app_role() is not null);
 create policy leads_delete on leads for delete to authenticated using (app_role() = 'admin');
 
--- child tables follow the visibility of their lead
+-- Child tables follow the visibility of their lead. A row can only be written in the writer's
+-- own name. History, call logs, messages and lead posts are records and are never edited;
+-- follow-ups, enrolments and opportunities stay editable.
 do $$
-declare t text;
+declare r record;
 begin
-  foreach t in array array['lead_activities', 'call_logs', 'tasks', 'messages', 'enrollments',
-                           'opportunities', 'lead_posts'] loop
-    execute format('create policy %I on %I for select to authenticated using (exists (select 1 from leads l where l.id = lead_id))', t || '_select', t);
-    execute format('create policy %I on %I for insert to authenticated with check (exists (select 1 from leads l where l.id = lead_id))', t || '_insert', t);
-    execute format('create policy %I on %I for update to authenticated using (exists (select 1 from leads l where l.id = lead_id))', t || '_update', t);
-    execute format('create policy %I on %I for delete to authenticated using (app_role() = ''admin'')', t || '_delete', t);
+  for r in select * from (values
+    ('lead_activities', 'actor_id', false), ('call_logs', 'user_id', false), ('tasks', 'created_by', true), ('messages', 'sent_by', false),
+    ('enrollments', 'created_by', true), ('opportunities', 'created_by', true), ('lead_posts', 'posted_by', false)) as v (tbl, who, editable)
+  loop
+    execute format('create policy %I on %I for select to authenticated using (exists (select 1 from leads l where l.id = lead_id))', r.tbl || '_select', r.tbl);
+    execute format('create policy %I on %I for insert to authenticated with check (%I = auth.uid() and exists (select 1 from leads l where l.id = lead_id))', r.tbl || '_insert', r.tbl, r.who);
+    if r.editable then
+      execute format('create policy %I on %I for update to authenticated using (exists (select 1 from leads l where l.id = lead_id))', r.tbl || '_update', r.tbl);
+    end if;
+    execute format('create policy %I on %I for delete to authenticated using (app_role() = ''admin'')', r.tbl || '_delete', r.tbl);
   end loop;
 end $$;
 
@@ -498,6 +560,10 @@ grant select, insert, update, delete on all tables in schema public to authentic
 grant all on all tables in schema public to service_role;
 grant usage, select on all sequences in schema public to authenticated, service_role;
 grant execute on all functions in schema public to authenticated, service_role;
+-- Colleagues' names and roles are needed everywhere (owner names, history); their email and
+-- phone are not. The app reads full profiles with the service role after checking the caller.
+revoke all on table profiles from anon, authenticated;
+grant select (id, emp_code, full_name, role, manager_id, is_active) on table profiles to authenticated;
 revoke all on table global_login from anon, authenticated;
 revoke execute on function verify_global_login(text, text) from public, anon, authenticated;
 revoke execute on function set_global_login(text, text) from public, anon, authenticated;

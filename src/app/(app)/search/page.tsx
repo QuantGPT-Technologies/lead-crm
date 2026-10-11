@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
-import { applyLeadFilters } from "@/lib/data";
+import { applyLeadFilters, getSetting } from "@/lib/data";
 import { Badge, Card, Empty, PageHeader, btn } from "@/components/ui";
-import { cleanSearch, fmtDate, one, type SearchParams } from "@/lib/utils";
+import { cleanSearch, fmtDate, maskEmail, maskMobile, one, type SearchParams } from "@/lib/utils";
 
 export default async function SearchPage({ searchParams }: { searchParams: SearchParams }) {
   const q = cleanSearch(one((await searchParams).q) ?? "");
-  const { supabase } = await getSession();
+  const { supabase, profile } = await getSession();
+  // same rule as the lead list: contacts are hidden from everyone but admins while the setting is on
+  const masked = profile.role !== "admin" && (await getSetting(supabase, "mask_contacts_in_list", true));
 
   const { data, error } =
     q.length >= 3
@@ -53,8 +55,8 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                         {l.student_name as string}
                       </Link>
                     </td>
-                    <td>{l.mobile as string}</td>
-                    <td>{(l.email as string) ?? ""}</td>
+                    <td>{masked ? maskMobile(l.mobile as string) : (l.mobile as string)}</td>
+                    <td>{masked ? maskEmail(l.email as string | null) : ((l.email as string) ?? "")}</td>
                     <td>{stage && <Badge color={stage.color}>{stage.name}</Badge>}</td>
                     <td>{(l.owner as { full_name: string } | null)?.full_name ?? "Unassigned"}</td>
                     <td>{fmtDate(l.created_at as string)}</td>

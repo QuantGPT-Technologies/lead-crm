@@ -29,6 +29,11 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // A server action posted after the session ended is let through: every action checks the
+  // session itself and answers with a redirect to /login that the page can follow. Redirecting
+  // the POST here instead would hand the browser an HTML page it cannot read as an action result.
+  if (!user && !isPublic && request.method === "POST" && request.headers.has("next-action")) return response;
+
   if (!user && !isPublic) {
     const url = new URL("/login", request.url);
     if (pathname !== "/") url.searchParams.set("next", pathname);

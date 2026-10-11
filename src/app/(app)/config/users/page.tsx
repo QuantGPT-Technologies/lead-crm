@@ -1,11 +1,13 @@
 import { requireRole } from "@/lib/auth";
 import { PageHeader } from "@/components/ui";
+import { createAdminClient } from "@/lib/supabase/server";
 import type { Profile } from "@/lib/types";
 import { UsersTable } from "./users-table";
 
 export default async function UsersPage() {
-  const { supabase, profile } = await requireRole("admin");
-  const { data } = await supabase.from("profiles").select("*").order("created_at");
+  const { profile } = await requireRole("admin");
+  // emails and phones are not readable through the signed-in client; the admin check above allows the service role here
+  const { data } = await createAdminClient().from("profiles").select("*").order("created_at");
   return (
     <>
       <PageHeader title="Users" />
