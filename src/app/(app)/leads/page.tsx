@@ -1,14 +1,34 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AlarmClock, AlarmClockOff } from "lucide-react";
+import { AlarmClock, AlarmClockOff, Columns3, List, Plus } from "lucide-react";
 import { getSession } from "@/lib/auth";
-import { applyLeadFilters, getLookups, getSetting, LEAD_FILTER_KEYS, type LeadFilters } from "@/lib/data";
-import { Card, Pager, btn } from "@/components/ui";
-import { cn, fmtDate, fmtDateTime, maskEmail, maskMobile, one, type SearchParams } from "@/lib/utils";
+import {
+  applyLeadFilters,
+  getLookups,
+  getSetting,
+  LEAD_FILTER_KEYS,
+  type LeadFilters,
+} from "@/lib/data";
+import { Card, PageHeader, Pager, btn } from "@/components/ui";
+import {
+  cn,
+  fmtDate,
+  fmtDateTime,
+  maskEmail,
+  maskMobile,
+  one,
+  type SearchParams,
+} from "@/lib/utils";
 import { LeadFilterBar } from "./lead-filter-bar";
 import { LeadTable, type LeadRow } from "./lead-table";
 
-const SORTS = ["created_at", "student_name", "attempt_count", "next_followup_at", "lead_no"];
+const SORTS = [
+  "created_at",
+  "student_name",
+  "attempt_count",
+  "next_followup_at",
+  "lead_no",
+];
 const SIZES = [25, 50, 100];
 
 const LIST_COLUMNS =
@@ -18,37 +38,60 @@ const LIST_COLUMNS =
 
 type Rel = { name?: string; color?: string; full_name?: string } | null;
 
-export default async function LeadListPage({ searchParams }: { searchParams: SearchParams }) {
+export default async function LeadListPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
   const sp = await searchParams;
   const { supabase, profile } = await getSession();
   const lookups = await getLookups();
 
-  const filters: LeadFilters = Object.fromEntries(LEAD_FILTER_KEYS.map((k) => [k, one(sp[k])]));
+  const filters: LeadFilters = Object.fromEntries(
+    LEAD_FILTER_KEYS.map((k) => [k, one(sp[k])]),
+  );
   const page = Math.max(1, Number(one(sp.page)) || 1);
   const size = SIZES.includes(Number(one(sp.size))) ? Number(one(sp.size)) : 50;
-  const sort = SORTS.includes(one(sp.sort) ?? "") ? one(sp.sort)! : "created_at";
+  const sort = SORTS.includes(one(sp.sort) ?? "")
+    ? one(sp.sort)!
+    : "created_at";
   const asc = one(sp.dir) === "asc";
 
-  const query = applyLeadFilters(supabase.from("leads").select(LIST_COLUMNS, { count: "exact" }), filters)
+  const query = applyLeadFilters(
+    supabase.from("leads").select(LIST_COLUMNS, { count: "exact" }),
+    filters,
+  )
     .order(sort, { ascending: asc, nullsFirst: false })
     .range((page - 1) * size, page * size - 1);
-  const [{ data, count, error }, maskSetting] = await Promise.all([query, getSetting(supabase, "mask_contacts_in_list", true)]);
+  const [{ data, count, error }, maskSetting] = await Promise.all([
+    query,
+    getSetting(supabase, "mask_contacts_in_list", true),
+  ]);
 
   // A page number past the end (stale bookmark, or rows removed by a filter/delete) makes
   // PostgREST reject the range; send the user to the first page instead of showing an error.
   if (error?.code === "PGRST103" && page > 1) {
     const sp1 = new URLSearchParams();
-    Object.entries({ ...filters, size: String(size), sort, dir: asc ? "asc" : "desc" }).forEach(([k, v]) => v && sp1.set(k, v));
+    Object.entries({
+      ...filters,
+      size: String(size),
+      sort,
+      dir: asc ? "asc" : "desc",
+    }).forEach(([k, v]) => v && sp1.set(k, v));
     redirect(`/leads?${sp1}`);
   }
 
   const masked = maskSetting && profile.role !== "admin";
-  const rows: LeadRow[] = ((data ?? []) as unknown as Record<string, unknown>[]).map((l) => ({
+  const rows: LeadRow[] = (
+    (data ?? []) as unknown as Record<string, unknown>[]
+  ).map((l) => ({
     id: l.id as string,
     lead_no: l.lead_no as string,
     name: l.student_name as string,
     mobile: masked ? maskMobile(l.mobile as string) : (l.mobile as string),
-    email: masked ? maskEmail(l.email as string | null) : ((l.email as string | null) ?? ""),
+    email: masked
+      ? maskEmail(l.email as string | null)
+      : ((l.email as string | null) ?? ""),
     university: (l.university as Rel)?.name ?? "",
     course: (l.course as Rel)?.name ?? "",
     stage: (l.stage as Rel)?.name ?? "",
@@ -61,49 +104,106 @@ export default async function LeadListPage({ searchParams }: { searchParams: Sea
     priority: l.priority as string,
     attempts: l.attempt_count as number,
     followup: fmtDateTime(l.next_followup_at as string | null),
-    overdue: !!l.next_followup_at && new Date(l.next_followup_at as string) < new Date(),
+    overdue:
+      !!l.next_followup_at &&
+      new Date(l.next_followup_at as string) < new Date(),
     created: fmtDate(l.created_at as string),
   }));
 
-  const params: Record<string, string | undefined> = { ...filters, size: String(size), sort, dir: asc ? "asc" : "desc" };
+  const params: Record<string, string | undefined> = {
+    ...filters,
+    size: String(size),
+    sort,
+    dir: asc ? "asc" : "desc",
+  };
   const followupHref = (v: "today" | "missed") => {
     // toggles this one filter and keeps every other filter, the sort and the page size
     const s = new URLSearchParams();
-    Object.entries({ ...params, followup: filters.followup === v ? undefined : v }).forEach(([k, val]) => val && s.set(k, val));
+    Object.entries({
+      ...params,
+      followup: filters.followup === v ? undefined : v,
+    }).forEach(([k, val]) => val && s.set(k, val));
     return `/leads?${s}`;
   };
 
   return (
-    <div className="space-y-3">
-      <Card className="flex flex-wrap items-center gap-2 p-3">
-        <h1 className="mr-2 text-lg font-extrabold">Lead List</h1>
-        <LeadFilterBar lookups={lookups} current={params} isStaff={profile.role !== "agent"} />
+    <div className="space-y-5">
+      <PageHeader
+        title="Your leads"
+        description="Real people. New possibilities. Keep every relationship moving."
+      >
+        <div className="segmented">
+          <Link
+            href="/leads"
+            aria-current="page"
+            className="flex items-center gap-2"
+          >
+            <List size={14} />
+            List
+          </Link>
+          <Link href="/leads/kanban" className="flex items-center gap-2">
+            <Columns3 size={14} />
+            Board
+          </Link>
+        </div>
+        <Link href="/leads/new" className={btn()}>
+          <Plus size={15} />
+          New lead
+        </Link>
+      </PageHeader>
+      <Card className="flex flex-wrap items-center gap-2 p-4">
+        <LeadFilterBar
+          lookups={lookups}
+          current={params}
+          isStaff={profile.role !== "agent"}
+        />
         <div className="ml-auto flex flex-wrap gap-2">
-          <Link href={followupHref("today")} className={cn(btn(filters.followup === "today" ? "success" : "outline"), filters.followup !== "today" && "!border-emerald-600 !text-emerald-600")}>
-            <AlarmClock size={15} /> Today Followups
+          <Link
+            href={followupHref("today")}
+            className={cn(
+              btn(filters.followup === "today" ? "success" : "outline"),
+              filters.followup !== "today" &&
+                "!border-emerald-600 !text-emerald-600",
+            )}
+          >
+            <AlarmClock size={15} /> Due today
           </Link>
-          <Link href={followupHref("missed")} className={cn(btn("danger"), filters.followup === "missed" && "!bg-red-600 !text-white")}>
-            <AlarmClockOff size={15} /> Missed Followups
-          </Link>
-          <Link href="/leads/new" className={btn()}>
-            Add
+          <Link
+            href={followupHref("missed")}
+            className={cn(
+              btn("danger"),
+              filters.followup === "missed" && "!bg-red-600 !text-white",
+            )}
+          >
+            <AlarmClockOff size={15} /> Overdue
           </Link>
         </div>
       </Card>
 
-      <Card>
+      <Card className="overflow-hidden">
         {error ? (
-          <p className="p-6 text-red-600">Could not load leads: {error.message}</p>
+          <p className="p-6 text-red-600">
+            Could not load leads: {error.message}
+          </p>
         ) : (
           <LeadTable
             rows={rows}
             params={params}
             role={profile.role}
             stages={lookups.stages.map((s) => ({ value: s.id, label: s.name }))}
-            users={lookups.users.map((u) => ({ value: u.id, label: `${u.full_name} (${u.emp_code})` }))}
+            users={lookups.users.map((u) => ({
+              value: u.id,
+              label: `${u.full_name} (${u.emp_code})`,
+            }))}
           />
         )}
-        <Pager page={page} size={size} total={count ?? 0} params={params} path="/leads" />
+        <Pager
+          page={page}
+          size={size}
+          total={count ?? 0}
+          params={params}
+          path="/leads"
+        />
       </Card>
     </div>
   );

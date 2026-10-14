@@ -1,45 +1,96 @@
-import { ShieldCheck } from "lucide-react";
+import { ArrowUpRight, Leaf, ShieldCheck } from "lucide-react";
 import { env, requireGlobalLogin, requireOtp } from "@/lib/env";
 import { readSigned } from "@/lib/signed-cookie";
 import { one, type SearchParams } from "@/lib/utils";
 import { LoginFlow } from "./login-flow";
-
-export default async function LoginPage({ searchParams }: { searchParams: SearchParams }) {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
   const sp = await searchParams;
   const useGlobal = requireGlobalLogin();
-  const globalDone = useGlobal ? !!(await readSigned("crm_global").catch(() => null)) : true;
+  const globalDone = useGlobal
+    ? !!(await readSigned("crm_global").catch(() => null))
+    : true;
   const next = one(sp.next);
-
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="grid w-full max-w-6xl overflow-hidden rounded-xl bg-card shadow-xl md:min-h-[640px] md:grid-cols-2">
-        <div
-          className="bg-brand-diagonal relative hidden items-center justify-center text-white md:flex"
-          style={{ clipPath: "polygon(0 0, 88% 0, 100% 100%, 0 100%)" }}
-        >
-          <div className="pr-16 text-center">
-            <div className="mx-auto mb-6 flex h-28 w-28 items-center justify-center rounded-3xl bg-white/15 backdrop-blur">
-              <ShieldCheck size={64} strokeWidth={1.5} />
+    <main className="grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
+      <section className="login-story relative hidden flex-col justify-between overflow-hidden p-12 lg:flex xl:p-16">
+        <div className="relative z-10 flex items-center gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/25">
+            <Leaf size={23} strokeWidth={1.5} />
+          </span>
+          <span className="text-xl font-semibold tracking-tight">
+            {env.appName}
+          </span>
+        </div>
+        <div className="relative z-10 my-12 max-w-lg">
+          <p className="mb-6 text-[10px] uppercase tracking-[.22em] text-[#c4d5ae]">
+            People first. Progress follows.
+          </p>
+          <h2 className="login-display text-6xl xl:text-7xl">
+            Good relationships.
+            <br />
+            <span className="italic text-[#d9e5b8]">Great possibilities.</span>
+          </h2>
+          <p className="mt-8 max-w-sm text-sm leading-7 text-[#d4ded0]">
+            A calmer place to connect with students, nurture opportunities, and
+            build what comes next.
+          </p>
+          <div className="mt-12 max-w-sm rounded-2xl border border-white/15 bg-white/5 p-6">
+            <div className="mb-5 flex items-center justify-between text-xs">
+              <span className="text-white/65">Your next chapter</span>
+              <ArrowUpRight size={16} />
             </div>
-            <h2 className="text-3xl font-extrabold">{env.appName}</h2>
-            <p className="mt-2 text-white/80">Secure sign in for your team</p>
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#d9e5b8] text-[#254b37]">
+                <Leaf size={20} />
+              </span>
+              <div>
+                <p className="font-semibold">Small steps. Meaningful growth.</p>
+                <p className="mt-1 text-xs text-white/60">
+                  One conversation at a time.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
-
-        <div className="flex flex-col justify-between px-6 py-10 sm:px-14">
+        <div className="relative z-10 flex items-center justify-between text-[11px] text-white/55">
+          <span>{env.companyName}</span>
+          <span className="flex items-center gap-2">
+            <ShieldCheck size={14} /> A secure team workspace
+          </span>
+        </div>
+      </section>
+      <section className="flex min-w-0 flex-col justify-between px-6 py-8 sm:px-12 lg:px-16 xl:px-24">
+        <div className="flex items-center justify-between">
+          <span className="flex items-center gap-2 text-lg font-bold lg:invisible">
+            <Leaf size={20} />
+            {env.appName}
+          </span>
+          <span className="rounded-full border border-line px-3 py-1.5 text-[10px] text-muted">
+            Team workspace
+          </span>
+        </div>
+        <div className="my-14">
           <LoginFlow
             useGlobal={useGlobal}
             useOtp={requireOtp()}
             initialStep={globalDone ? "user" : "global"}
-            // only same-site paths: browsers read "/\host" and "/<tab>/host" as "//host", which would leave the site
             next={next && /^\/(?!\/)[^\\\s]*$/.test(next) ? next : "/dashboard"}
-            notice={one(sp.error) === "inactive" ? "Your account is not active. Contact your administrator." : undefined}
+            notice={
+              one(sp.error) === "inactive"
+                ? "Your account is not active. Contact your administrator."
+                : undefined
+            }
           />
-          <p className="mt-10 text-center text-sm text-muted">
-            {new Date().getFullYear()}. {env.companyName}. All Rights Reserved.
-          </p>
         </div>
-      </div>
+        <p className="text-center text-[11px] leading-6 text-muted">
+          © {new Date().getFullYear()} {env.companyName}
+          <br />A workspace for meaningful connections.
+        </p>
+      </section>
     </main>
   );
 }

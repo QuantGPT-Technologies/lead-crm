@@ -1,16 +1,31 @@
 "use client";
 
 import { useState, useTransition, type FormEvent } from "react";
-import { Check, Eye, EyeOff, Globe, KeyRound, Lock, Mail, User } from "lucide-react";
+import {
+  Check,
+  Eye,
+  EyeOff,
+  Globe,
+  KeyRound,
+  Lock,
+  Mail,
+  User,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { globalLogin, resetLogin, userLogin, verifyOtp } from "./actions";
 
 type Step = "global" | "user" | "otp";
 
 const TITLES: Record<Step, [string, string]> = {
-  global: ["GLOBAL SIGN IN", "Enter your email and password to login"],
-  user: ["USER SIGN IN", "Enter your user id and password"],
-  otp: ["OTP VALIDATION", "Enter the code sent to your registered email"],
+  global: [
+    "Welcome to your workspace.",
+    "Start with your company email and password.",
+  ],
+  user: [
+    "Make yourself at home.",
+    "Sign in with your user ID or email to get started.",
+  ],
+  otp: ["One last step.", "Enter the verification code we sent to your email."],
 };
 
 export function LoginFlow({
@@ -33,9 +48,13 @@ export function LoginFlow({
   const [pending, start] = useTransition();
 
   const steps = [
-    ...(useGlobal ? [{ key: "global" as Step, label: "Global Login", icon: Globe }] : []),
-    { key: "user" as Step, label: "User Login", icon: User },
-    ...(useOtp ? [{ key: "otp" as Step, label: "OTP Validation", icon: KeyRound }] : []),
+    ...(useGlobal
+      ? [{ key: "global" as Step, label: "Workspace", icon: Globe }]
+      : []),
+    { key: "user" as Step, label: "Your account", icon: User },
+    ...(useOtp
+      ? [{ key: "otp" as Step, label: "Verification", icon: KeyRound }]
+      : []),
   ];
   const current = steps.findIndex((s) => s.key === step);
 
@@ -72,35 +91,73 @@ export function LoginFlow({
   return (
     <div className="mx-auto w-full max-w-md">
       {steps.length > 1 && (
-        <ol className="mb-12 flex items-start">
+        <ol className="mb-10 flex items-start" aria-label="Sign-in progress">
           {steps.map((s, i) => (
-            <li key={s.key} className={cn("flex items-start", i < steps.length - 1 && "flex-1")}>
+            <li
+              key={s.key}
+              className={cn(
+                "flex items-start",
+                i < steps.length - 1 && "flex-1",
+              )}
+            >
               <div className="flex w-20 flex-col items-center gap-2 text-center">
                 <span
                   className={cn(
-                    "flex h-9 w-9 items-center justify-center rounded-full text-white",
-                    i < current ? "bg-emerald-500" : "bg-brand",
-                    i === current && "ring-2 ring-emerald-500 ring-offset-2 ring-offset-card",
+                    "flex h-8 w-8 items-center justify-center rounded-lg",
+                    i <= current
+                      ? "bg-brand text-white dark:text-bg"
+                      : "bg-soft text-muted",
                   )}
                 >
                   {i < current ? <Check size={16} /> : <s.icon size={16} />}
                 </span>
-                <span className="text-xs font-semibold text-brand">{s.label}</span>
+                <span
+                  className={cn(
+                    "whitespace-nowrap text-[10px] font-semibold",
+                    i <= current ? "text-brand" : "text-muted",
+                  )}
+                >
+                  {s.label}
+                </span>
               </div>
-              {i < steps.length - 1 && <span className="mt-4 h-1 flex-1 rounded bg-brand/30" />}
+              {i < steps.length - 1 && (
+                <span className="mx-3 mt-4 h-px flex-1 bg-line" />
+              )}
             </li>
           ))}
         </ol>
       )}
 
-      <h1 className="text-3xl font-extrabold text-brand">{TITLES[step][0]}</h1>
-      <p className="mt-2 text-muted">{step === "otp" && name ? `${name} - ${TITLES.otp[1]}` : TITLES[step][1]}</p>
+      <h1 className="text-[30px] font-semibold leading-tight">
+        {TITLES[step][0]}
+      </h1>
+      <p className="mt-2 text-muted">
+        {step === "otp" && name
+          ? `${name} - ${TITLES.otp[1]}`
+          : TITLES[step][1]}
+      </p>
 
       <form onSubmit={submit} className="mt-8 space-y-5">
         {step === "global" && (
-          <LoginInput icon={Mail} label="Email" name="email" type="email" autoComplete="username" autoFocus />
+          <LoginInput
+            icon={Mail}
+            label="Email"
+            name="email"
+            type="email"
+            autoComplete="username"
+            autoFocus
+          />
         )}
-        {step === "user" && <LoginInput icon={User} label="User ID" name="userId" placeholder="EA00000001 or your email" autoComplete="username" autoFocus />}
+        {step === "user" && (
+          <LoginInput
+            icon={User}
+            label="User ID"
+            name="userId"
+            placeholder="EA00000001 or your email"
+            autoComplete="username"
+            autoFocus
+          />
+        )}
         {step !== "otp" && (
           <LoginInput
             icon={Lock}
@@ -109,30 +166,61 @@ export function LoginFlow({
             type={show ? "text" : "password"}
             autoComplete="current-password"
             trailing={
-              <button type="button" onClick={() => setShow((s) => !s)} aria-label={show ? "Hide password" : "Show password"} className="text-muted">
+              <button
+                type="button"
+                onClick={() => setShow((s) => !s)}
+                aria-label={show ? "Hide password" : "Show password"}
+                className="text-muted"
+              >
                 {show ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             }
           />
         )}
-        {step === "otp" && <LoginInput icon={Lock} label="Enter Otp" name="otp" inputMode="numeric" autoComplete="one-time-code" placeholder="Enter Otp" autoFocus />}
+        {step === "otp" && (
+          <LoginInput
+            icon={Lock}
+            label="Verification code"
+            name="otp"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="6-digit code"
+            autoFocus
+          />
+        )}
 
         {error && (
-          <p role="alert" className="rounded-md bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-600">
+          <p
+            role="alert"
+            className="rounded-md bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-600"
+          >
             {error}
           </p>
         )}
 
-        <button type="submit" disabled={pending} className="bg-brand-gradient h-10 w-full rounded-md text-sm font-bold tracking-wide text-white shadow disabled:opacity-60">
-          {pending ? "PLEASE WAIT..." : step === "otp" ? "VERIFY" : "SIGN IN"}
+        <button
+          type="submit"
+          disabled={pending}
+          className="ui-button h-12 w-full rounded-xl bg-brand text-sm font-semibold text-white dark:text-bg disabled:opacity-60"
+        >
+          {pending
+            ? "Signing you in…"
+            : step === "otp"
+              ? "Verify and continue"
+              : "Continue to workspace →"}
         </button>
       </form>
 
       {step !== steps[0].key && (
         <p className="mt-5 text-center text-sm">
-          Reset to {useGlobal ? "Global" : "User"} Login ?{" "}
-          <button type="button" onClick={reset} className="font-bold text-brand underline">
-            RESET
+          Signing into a different workspace?{" "}
+          <button
+            type="button"
+            onClick={reset}
+            disabled={pending}
+            className="font-semibold text-brand underline underline-offset-4"
+          >
+            Start again
           </button>
         </p>
       )}
@@ -145,13 +233,21 @@ function LoginInput({
   label,
   trailing,
   ...props
-}: React.InputHTMLAttributes<HTMLInputElement> & { icon: typeof Mail; label: string; trailing?: React.ReactNode }) {
+}: React.InputHTMLAttributes<HTMLInputElement> & {
+  icon: typeof Mail;
+  label: string;
+  trailing?: React.ReactNode;
+}) {
   return (
     <label className="block">
       <span className="mb-1.5 block text-sm font-semibold">{label}</span>
-      <span className="flex h-10 items-center gap-2 rounded-md border border-line bg-soft px-3 focus-within:border-brand">
+      <span className="login-input flex h-12 items-center gap-3 rounded-xl border border-line bg-card px-4 focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/10">
         <Icon size={16} className="text-muted" />
-        <input {...props} required className="h-full flex-1 bg-transparent outline-none" />
+        <input
+          {...props}
+          required
+          className="h-full min-w-0 flex-1 bg-transparent text-base outline-none sm:text-sm"
+        />
         {trailing}
       </span>
     </label>

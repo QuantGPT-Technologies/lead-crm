@@ -1,138 +1,162 @@
 "use client";
-
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  ArrowLeftRight, BarChart3, BookOpenCheck, CalendarClock, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, CircleUser,
-  Database, FileText, GraduationCap, GripVertical, History, LayoutDashboard, MessagesSquare, Search, Settings, Share2, Target,
-  Trophy, Upload, UserCog, Users, type LucideIcon,
+  ArrowLeftRight,
+  ArrowUpRight,
+  BarChart3,
+  CalendarClock,
+  Columns3,
+  Database,
+  FileText,
+  GraduationCap,
+  History,
+  LayoutDashboard,
+  Leaf,
+  MessagesSquare,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Settings,
+  Share2,
+  Target,
+  Trophy,
+  Upload,
+  UserCog,
+  Users,
+  type LucideIcon,
 } from "lucide-react";
 import type { NavItem } from "@/lib/nav";
 import { cn } from "@/lib/utils";
-
 const ICONS: Record<string, LucideIcon> = {
-  ArrowLeftRight, BarChart3, CalendarClock, CircleUser, Database, FileText, GraduationCap, History, LayoutDashboard,
-  MessagesSquare, Search, Settings, Share2, Target, Trophy, Upload, UserCog, Users,
+  ArrowLeftRight,
+  BarChart3,
+  CalendarClock,
+  Columns3,
+  Database,
+  FileText,
+  GraduationCap,
+  History,
+  LayoutDashboard,
+  MessagesSquare,
+  Settings,
+  Share2,
+  Target,
+  Trophy,
+  Upload,
+  UserCog,
+  Users,
 };
-
-const contains = (item: NavItem, path: string): boolean =>
-  item.href === path || !!item.children?.some((c) => contains(c, path));
-
 export function Sidebar({ nav, appName }: { nav: NavItem[]; appName: string }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  // only what the user explicitly opened/closed is stored; otherwise a group is open when it holds the current page
-  const [toggled, setToggled] = useState<Record<string, boolean>>({});
-  const isOpen = (item: NavItem) => toggled[item.label] ?? contains(item, pathname);
-  const toggle = (item: NavItem) => setToggled((t) => ({ ...t, [item.label]: !isOpen(item) }));
-
-  if (collapsed) {
-    return (
-      <aside className="sticky top-0 hidden h-screen w-14 shrink-0 flex-col items-center gap-1 border-r border-line bg-card py-4 md:flex">
-        <button type="button" onClick={() => setCollapsed(false)} aria-label="Expand menu" className="mb-3 text-muted hover:text-fg">
-          <ChevronsRight size={18} />
-        </button>
-        {nav.flatMap((g) => g.children ?? []).map((item) => {
-          const Icon = ICONS[item.icon ?? ""] ?? Users;
-          const href = item.href ?? item.children?.[1]?.href ?? "#";
-          return (
-            <Link
-              key={item.label}
-              href={href}
-              title={item.label}
-              className={cn("flex h-9 w-9 items-center justify-center rounded-md hover:bg-soft", contains(item, pathname) ? "bg-soft text-brand" : "text-muted")}
-            >
-              <Icon size={17} />
-            </Link>
-          );
-        })}
-      </aside>
-    );
-  }
-
+  const active = (href: string) =>
+    pathname === href ||
+    (href === "/leads" &&
+      /^\/leads\/[^/]+$/.test(pathname) &&
+      !["/leads/kanban", "/leads/new"].includes(pathname));
   return (
-    <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-line bg-card md:flex">
-      <div className="flex items-center justify-between px-4 py-4">
-        <Link href="/dashboard" className="flex items-center gap-2 text-base font-extrabold">
-          <span className="bg-brand-gradient flex h-8 w-8 items-center justify-center rounded-lg text-white">
-            <BookOpenCheck size={17} />
+    <aside
+      className={cn(
+        "workspace-sidebar sticky top-0 hidden h-screen shrink-0 flex-col border-r border-line md:flex",
+        collapsed && "!w-[76px]",
+      )}
+    >
+      <div className={cn("flex h-24 items-center px-5", collapsed && "!px-4")}>
+        <Link
+          href="/dashboard"
+          className="flex min-w-0 items-center gap-3"
+          aria-label={appName}
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-white dark:text-bg">
+            <Leaf size={21} strokeWidth={1.6} />
           </span>
-          {appName}
+          {!collapsed && (
+            <div>
+              <span className="text-[17px] font-extrabold tracking-tight">
+                {appName}
+              </span>
+              <p className="mt-0.5 text-[10px] tracking-wide text-muted">
+                A little closer. Every day.
+              </p>
+            </div>
+          )}
         </Link>
-        <button type="button" onClick={() => setCollapsed(true)} aria-label="Collapse menu" className="text-muted hover:text-fg">
-          <ChevronsLeft size={18} />
-        </button>
       </div>
-
-      <nav className="space-y-1.5 px-2 pb-6">
+      <div className={cn("px-4 pb-4", collapsed && "px-3")}>
+        <Link
+          href="/leads/new"
+          className="ui-button flex h-10 items-center justify-center gap-2 rounded-xl border border-brand/20 bg-card font-semibold text-brand"
+          title="New lead"
+        >
+          <Plus size={16} />
+          {!collapsed && "New lead"}
+        </Link>
+      </div>
+      <nav
+        aria-label="Main navigation"
+        className="flex-1 space-y-5 overflow-y-auto px-3 pb-5"
+      >
         {nav.map((group) => (
           <div key={group.label}>
-            <button
-              type="button"
-              onClick={() => toggle(group)}
-              aria-expanded={isOpen(group)}
-              className="flex w-full items-center gap-2 rounded-md bg-soft px-2.5 py-2 text-[13px] font-bold tracking-wide"
-            >
-              <GripVertical size={13} className="text-muted" />
-              <span className="flex-1 text-left">{group.label}</span>
-              {isOpen(group) ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-            </button>
-
-            {isOpen(group) && (
-              <ul className="mt-1 space-y-0.5">
-                {group.children?.map((item) => {
-                  const Icon = ICONS[item.icon ?? ""] ?? Users;
-                  if (!item.children) {
-                    return (
-                      <li key={item.label}>
-                        <Link
-                          href={item.href!}
-                          className={cn(
-                            "flex items-center gap-3 rounded-md px-3 py-2 font-semibold hover:bg-soft",
-                            pathname === item.href ? "bg-soft text-brand" : "",
-                          )}
-                        >
-                          <Icon size={16} className="text-muted" />
-                          {item.label}
-                        </Link>
-                      </li>
-                    );
-                  }
-                  return (
-                    <li key={item.label}>
-                      <button
-                        type="button"
-                        onClick={() => toggle(item)}
-                        aria-expanded={isOpen(item)}
-                        className={cn("flex w-full items-center gap-3 rounded-md px-3 py-2 font-semibold hover:bg-soft", isOpen(item) && "bg-soft")}
-                      >
-                        <Icon size={16} className="text-muted" />
-                        <span className="flex-1 text-left">{item.label}</span>
-                        {isOpen(item) ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                      </button>
-                      {isOpen(item) && (
-                        <ul className="py-1">
-                          {item.children.map((c) => (
-                            <li key={c.label}>
-                              <Link
-                                href={c.href!}
-                                className={cn("block py-1.5 pl-11 pr-3 hover:text-brand", pathname === c.href ? "font-bold text-brand" : "text-muted")}
-                              >
-                                – {c.label}
-                              </Link>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+            {!collapsed && <p className="eyebrow mb-2 px-3">{group.label}</p>}
+            <div className="space-y-1">
+              {group.children?.map((item) => {
+                const Icon = ICONS[item.icon ?? ""] ?? Users;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href!}
+                    className={cn(
+                      "nav-link",
+                      collapsed && "justify-center !px-0",
+                    )}
+                    data-active={active(item.href!)}
+                    aria-current={active(item.href!) ? "page" : undefined}
+                    title={collapsed ? item.label : undefined}
+                  >
+                    <Icon size={17} strokeWidth={1.7} />
+                    {!collapsed && (
+                      <>
+                        <span className="flex-1">{item.label}</span>
+                        {active(item.href!) && (
+                          <span className="h-1.5 w-1.5 rounded-full bg-brand" />
+                        )}
+                      </>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
         ))}
       </nav>
+      <div className="border-t border-line p-3">
+        {!collapsed && (
+          <Link
+            href="/followups"
+            className="mb-3 flex items-center justify-between rounded-xl bg-[var(--accent)] p-3 text-xs font-semibold"
+          >
+            Make your next move
+            <ArrowUpRight size={15} />
+          </Link>
+        )}
+        <button
+          type="button"
+          onClick={() => setCollapsed(!collapsed)}
+          className="nav-link w-full justify-center text-xs"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? (
+            <PanelLeftOpen size={17} />
+          ) : (
+            <>
+              <PanelLeftClose size={17} /> Collapse sidebar
+            </>
+          )}
+        </button>
+      </div>
     </aside>
   );
 }

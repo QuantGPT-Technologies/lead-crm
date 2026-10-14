@@ -10,57 +10,55 @@ export interface NavItem {
 
 const STAFF: Role[] = ["admin", "manager"];
 
+// Organize around daily work; every destination is directly visible.
 export const NAV: NavItem[] = [
-  { label: "DASHBOARD", children: [{ label: "Overview", href: "/dashboard", icon: "LayoutDashboard" }] },
   {
-    label: "MAIN",
+    label: "Workspace",
     children: [
-      { label: "Search Lead", href: "/search", icon: "Search" },
-      { label: "Upload", href: "/upload", icon: "Upload", roles: STAFF },
-      { label: "Distribute", href: "/distribute", icon: "Share2", roles: STAFF },
-      { label: "Data Allotment", href: "/allotment", icon: "ArrowLeftRight", roles: STAFF },
+      { label: "Overview", href: "/dashboard", icon: "LayoutDashboard" },
+      { label: "All leads", href: "/leads", icon: "Users" },
+      { label: "Pipeline", href: "/leads/kanban", icon: "Columns3" },
+      { label: "Follow-ups", href: "/followups", icon: "CalendarClock" },
+      { label: "Opportunities", href: "/opportunities", icon: "Target" },
+      { label: "Enrollments", href: "/enrolled", icon: "GraduationCap" },
+    ],
+  },
+  {
+    label: "Team operations",
+    roles: STAFF,
+    children: [
+      { label: "Import leads", href: "/upload", icon: "Upload" },
+      { label: "Distribute leads", href: "/distribute", icon: "Share2" },
+      { label: "Assignments", href: "/allotment", icon: "ArrowLeftRight" },
+    ],
+  },
+  {
+    label: "Insights & outreach",
+    children: [
+      { label: "Reports", href: "/reports", icon: "BarChart3" },
       {
-        label: "Lead",
-        icon: "Users",
-        children: [
-          { label: "Lead Kanban", href: "/leads/kanban" },
-          { label: "Lead List", href: "/leads" },
-          { label: "Add New Lead", href: "/leads/new" },
-        ],
+        label: "Team performance",
+        href: "/reports/agents",
+        icon: "Trophy",
+        roles: STAFF,
       },
-      { label: "Followups", href: "/followups", icon: "CalendarClock" },
-      { label: "Enrolled", href: "/enrolled", icon: "GraduationCap" },
-      { label: "Opportunity", href: "/opportunities", icon: "Target" },
+      { label: "Messages", href: "/communication", icon: "MessagesSquare" },
+      {
+        label: "Templates",
+        href: "/communication/templates",
+        icon: "FileText",
+        roles: ["admin"],
+      },
+      { label: "Activity", href: "/activity", icon: "History" },
     ],
   },
   {
-    label: "REPORTS",
-    children: [
-      { label: "Lead Reports", href: "/reports", icon: "BarChart3" },
-      { label: "Agent Performance", href: "/reports/agents", icon: "Trophy", roles: STAFF },
-    ],
-  },
-  {
-    label: "COMMUNICATION",
-    children: [
-      { label: "Message Log", href: "/communication", icon: "MessagesSquare" },
-      { label: "Templates", href: "/communication/templates", icon: "FileText", roles: ["admin"] },
-    ],
-  },
-  {
-    label: "CONFIGURATION",
+    label: "Administration",
     roles: ["admin"],
     children: [
-      { label: "Users", href: "/config/users", icon: "UserCog" },
-      { label: "Masters", href: "/config/masters", icon: "Database" },
+      { label: "Team members", href: "/config/users", icon: "UserCog" },
+      { label: "Data & stages", href: "/config/masters", icon: "Database" },
       { label: "Settings", href: "/config/settings", icon: "Settings" },
-    ],
-  },
-  {
-    label: "OTHERS",
-    children: [
-      { label: "Activity Log", href: "/activity", icon: "History" },
-      { label: "My Profile", href: "/profile", icon: "CircleUser" },
     ],
   },
 ];
@@ -68,10 +66,15 @@ export const NAV: NavItem[] = [
 export function navFor(role: Role): NavItem[] {
   const allowed = (i: NavItem) => !i.roles || i.roles.includes(role);
   const walk = (items: NavItem[]): NavItem[] =>
-    items.filter(allowed).map((i) => (i.children ? { ...i, children: walk(i.children) } : i));
+    items
+      .filter(allowed)
+      .map((i) => (i.children ? { ...i, children: walk(i.children) } : i));
   return walk(NAV);
 }
 
 export function flatNav(items: NavItem[]): { label: string; href: string }[] {
-  return items.flatMap((i) => [...(i.href ? [{ label: i.label, href: i.href }] : []), ...(i.children ? flatNav(i.children) : [])]);
+  return items.flatMap((i) => [
+    ...(i.href ? [{ label: i.label, href: i.href }] : []),
+    ...(i.children ? flatNav(i.children) : []),
+  ]);
 }

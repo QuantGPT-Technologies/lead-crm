@@ -6,21 +6,50 @@ import { Badge, Button, Card, Field, Select, btn } from "@/components/ui";
 import { notify, toast } from "@/components/toast";
 import type { ActionResult, Lead, Lookups, Role, Row } from "@/lib/types";
 import { fmtDate, fmtMoney, renderTemplate, tzDateString } from "@/lib/utils";
-import { addNote, addTask, assignLeads, enrollLead, logCall, saveOpportunity, sendMessage } from "../actions";
+import {
+  addNote,
+  addTask,
+  assignLeads,
+  enrollLead,
+  logCall,
+  saveOpportunity,
+  sendMessage,
+} from "../actions";
 
-export type PanelMode = "email" | "note" | "task" | "assign" | "opportunity" | "sms" | "call" | "enroll" | "whatsapp";
+export type PanelMode =
+  | "email"
+  | "note"
+  | "task"
+  | "assign"
+  | "opportunity"
+  | "sms"
+  | "call"
+  | "enroll"
+  | "whatsapp";
 
 const TITLES: Record<PanelMode, string> = {
-  email: "Email", note: "Note", task: "Follow-up / Task", assign: "Assign Lead", opportunity: "Opportunity", sms: "SMS",
-  call: "Log Call", enroll: "Enrolment", whatsapp: "WhatsApp",
+  email: "Email",
+  note: "Note",
+  task: "Follow-up / Task",
+  assign: "Assign Lead",
+  opportunity: "Opportunity",
+  sms: "SMS",
+  call: "Log Call",
+  enroll: "Enrolment",
+  whatsapp: "WhatsApp",
 };
 const OUTCOMES = [
-  ["connected", "Connected"], ["no_answer", "Ringing - no answer"], ["busy", "Busy"], ["switched_off", "Switched off"],
-  ["callback", "Asked to call back"], ["wrong_number", "Wrong number"],
+  ["connected", "Connected"],
+  ["no_answer", "Ringing - no answer"],
+  ["busy", "Busy"],
+  ["switched_off", "Switched off"],
+  ["callback", "Asked to call back"],
+  ["wrong_number", "Wrong number"],
 ].map(([value, label]) => ({ value, label }));
 
 /** International number for wa.me links; 10-digit numbers are assumed to be Indian. */
-const intl = (mobile: string) => (mobile.length === 10 ? `91${mobile}` : mobile);
+const intl = (mobile: string) =>
+  mobile.length === 10 ? `91${mobile}` : mobile;
 
 interface Props {
   mode: PanelMode;
@@ -35,7 +64,7 @@ interface Props {
 export function ActionPanel(props: Props) {
   const { mode, lead } = props;
   return (
-    <Card className="self-start p-4">
+    <Card className="self-start p-5">
       <div className="mb-3 flex items-center justify-between border-b border-line pb-2">
         <h2 className="text-lg font-bold">{TITLES[mode]}</h2>
         {lead.dnd && <Badge color="#dc2626">Do Not Disturb</Badge>}
@@ -46,19 +75,31 @@ export function ActionPanel(props: Props) {
   );
 }
 
-function PanelBody({ mode, lead, lookups, me, enrollment, opportunities, emailLive }: Props) {
+function PanelBody({
+  mode,
+  lead,
+  lookups,
+  me,
+  enrollment,
+  opportunities,
+  emailLive,
+}: Props) {
   const [pending, start] = useTransition();
-  const [link, setLink] = useState<{ href: string; label: string } | null>(null);
+  const [link, setLink] = useState<{ href: string; label: string } | null>(
+    null,
+  );
   const isStaff = me.role !== "agent";
 
   /** Runs a server action from a form and clears the form when it worked. */
-  const submit = (fn: (f: FormData) => Promise<ActionResult>, okText?: string) => (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = e.currentTarget;
-    start(async () => {
-      if (notify(await fn(new FormData(form)), okText)) form.reset();
-    });
-  };
+  const submit =
+    (fn: (f: FormData) => Promise<ActionResult>, okText?: string) =>
+    (e: FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      start(async () => {
+        if (notify(await fn(new FormData(form)), okText)) form.reset();
+      });
+    };
   const str = (f: FormData, k: string) => String(f.get(k) ?? "");
   const iso = (v: string) => (v ? new Date(v).toISOString() : "");
   const save = (label: string) => (
@@ -68,13 +109,34 @@ function PanelBody({ mode, lead, lookups, me, enrollment, opportunities, emailLi
   );
 
   if (mode === "email" || mode === "sms" || mode === "whatsapp") {
-    return <Compose channel={mode} lead={lead} lookups={lookups} agent={me.name} emailLive={emailLive} link={link} setLink={setLink} />;
+    return (
+      <Compose
+        channel={mode}
+        lead={lead}
+        lookups={lookups}
+        agent={me.name}
+        emailLive={emailLive}
+        link={link}
+        setLink={setLink}
+      />
+    );
   }
 
   if (mode === "note") {
     return (
-      <form className="space-y-3" onSubmit={submit((f) => addNote(lead.id, str(f, "text")))}>
-        <textarea name="text" required rows={6} maxLength={4000} placeholder="Write a note about this lead..." aria-label="Note" className="input" />
+      <form
+        className="space-y-3"
+        onSubmit={submit((f) => addNote(lead.id, str(f, "text")))}
+      >
+        <textarea
+          name="text"
+          required
+          rows={6}
+          maxLength={4000}
+          placeholder="Write a note about this lead..."
+          aria-label="Note"
+          className="input"
+        />
         {save("Add note")}
       </form>
     );
@@ -82,16 +144,43 @@ function PanelBody({ mode, lead, lookups, me, enrollment, opportunities, emailLi
 
   if (mode === "task") {
     return (
-      <form className="space-y-3" onSubmit={submit((f) => addTask(lead.id, { title: str(f, "title"), due_at: iso(str(f, "due_at")), assigned_to: str(f, "assigned_to") }))}>
+      <form
+        className="space-y-3"
+        onSubmit={submit((f) =>
+          addTask(lead.id, {
+            title: str(f, "title"),
+            due_at: iso(str(f, "due_at")),
+            assigned_to: str(f, "assigned_to"),
+          }),
+        )}
+      >
         <Field label="Title" required>
-          <input name="title" required defaultValue="Follow up call" className="input" />
+          <input
+            name="title"
+            required
+            defaultValue="Follow up call"
+            className="input"
+          />
         </Field>
         <Field label="Due" required>
-          <input name="due_at" type="datetime-local" required className="input" />
+          <input
+            name="due_at"
+            type="datetime-local"
+            required
+            className="input"
+          />
         </Field>
         {isStaff && (
           <Field label="Assign to">
-            <Select name="assigned_to" defaultValue={lead.owner_id ?? me.id} options={lookups.users.map((u) => ({ value: u.id, label: u.full_name }))} placeholder={null} />
+            <Select
+              name="assigned_to"
+              defaultValue={lead.owner_id ?? me.id}
+              options={lookups.users.map((u) => ({
+                value: u.id,
+                label: u.full_name,
+              }))}
+              placeholder={null}
+            />
           </Field>
         )}
         {save("Schedule")}
@@ -101,9 +190,22 @@ function PanelBody({ mode, lead, lookups, me, enrollment, opportunities, emailLi
 
   if (mode === "assign") {
     return (
-      <form className="space-y-3" onSubmit={submit((f) => assignLeads([lead.id], str(f, "owner") || null))}>
+      <form
+        className="space-y-3"
+        onSubmit={submit((f) =>
+          assignLeads([lead.id], str(f, "owner") || null),
+        )}
+      >
         <Field label="Lead owner">
-          <Select name="owner" defaultValue={lead.owner_id ?? ""} options={lookups.users.map((u) => ({ value: u.id, label: `${u.full_name} (${u.emp_code})` }))} placeholder="Unassigned pool" />
+          <Select
+            name="owner"
+            defaultValue={lead.owner_id ?? ""}
+            options={lookups.users.map((u) => ({
+              value: u.id,
+              label: `${u.full_name} (${u.emp_code})`,
+            }))}
+            placeholder="Unassigned pool"
+          />
         </Field>
         {save("Assign")}
       </form>
@@ -132,13 +234,34 @@ function PanelBody({ mode, lead, lookups, me, enrollment, opportunities, emailLi
             <Select name="outcome" required options={OUTCOMES} />
           </Field>
           <Field label="Direction">
-            <Select name="direction" options={[{ value: "outbound", label: "Outbound" }, { value: "inbound", label: "Inbound" }]} placeholder={null} />
+            <Select
+              name="direction"
+              options={[
+                { value: "outbound", label: "Outbound" },
+                { value: "inbound", label: "Inbound" },
+              ]}
+              placeholder={null}
+            />
           </Field>
           <Field label="Minutes">
-            <input name="min" type="number" min={0} max={600} defaultValue={0} className="input" />
+            <input
+              name="min"
+              type="number"
+              min={0}
+              max={600}
+              defaultValue={0}
+              className="input"
+            />
           </Field>
           <Field label="Seconds">
-            <input name="sec" type="number" min={0} max={59} defaultValue={0} className="input" />
+            <input
+              name="sec"
+              type="number"
+              min={0}
+              max={59}
+              defaultValue={0}
+              className="input"
+            />
           </Field>
         </div>
         <Field label="Notes">
@@ -160,11 +283,15 @@ function PanelBody({ mode, lead, lookups, me, enrollment, opportunities, emailLi
   return (
     <div className="space-y-4">
       {opportunities.map((o) => (
-        <div key={o.id} className="flex items-center gap-2 rounded-md border border-line p-2.5">
+        <div
+          key={o.id}
+          className="flex items-center gap-2 rounded-md border border-line p-2.5"
+        >
           <div className="min-w-0 flex-1">
             <p className="font-semibold">{o.title as string}</p>
             <p className="text-xs text-muted">
-              {fmtMoney(o.amount as number)} · {o.probability as number}% · closes {fmtDate(o.expected_close as string) || "n/a"}
+              {fmtMoney(o.amount as number)} · {o.probability as number}% ·
+              closes {fmtDate(o.expected_close as string) || "n/a"}
             </p>
           </div>
           <Select
@@ -173,12 +300,24 @@ function PanelBody({ mode, lead, lookups, me, enrollment, opportunities, emailLi
             disabled={pending}
             placeholder={null}
             className="!h-8 !w-24"
-            options={["open", "won", "lost"].map((s) => ({ value: s, label: s }))}
+            options={["open", "won", "lost"].map((s) => ({
+              value: s,
+              label: s,
+            }))}
             onChange={(e) =>
-              start(async () =>
-                void notify(
-                  await saveOpportunity(lead.id, { id: o.id, title: o.title as string, amount: Number(o.amount), probability: Number(o.probability), expected_close: (o.expected_close as string) ?? "", notes: (o.notes as string) ?? "", status: e.target.value }),
-                ),
+              start(
+                async () =>
+                  void notify(
+                    await saveOpportunity(lead.id, {
+                      id: o.id,
+                      title: o.title as string,
+                      amount: Number(o.amount),
+                      probability: Number(o.probability),
+                      expected_close: (o.expected_close as string) ?? "",
+                      notes: (o.notes as string) ?? "",
+                      status: e.target.value,
+                    }),
+                  ),
               )
             }
           />
@@ -186,17 +325,44 @@ function PanelBody({ mode, lead, lookups, me, enrollment, opportunities, emailLi
       ))}
       <form
         className="space-y-3"
-        onSubmit={submit((f) => saveOpportunity(lead.id, { title: str(f, "title"), amount: Number(str(f, "amount")), probability: Number(str(f, "probability")), expected_close: str(f, "expected_close"), notes: str(f, "notes") }))}
+        onSubmit={submit((f) =>
+          saveOpportunity(lead.id, {
+            title: str(f, "title"),
+            amount: Number(str(f, "amount")),
+            probability: Number(str(f, "probability")),
+            expected_close: str(f, "expected_close"),
+            notes: str(f, "notes"),
+          }),
+        )}
       >
         <Field label="Title" required>
-          <input name="title" required className="input" placeholder="e.g. MBA admission - July intake" />
+          <input
+            name="title"
+            required
+            className="input"
+            placeholder="e.g. MBA admission - July intake"
+          />
         </Field>
         <div className="grid grid-cols-3 gap-3">
           <Field label="Amount" required>
-            <input name="amount" type="number" min={0} step="0.01" required className="input" />
+            <input
+              name="amount"
+              type="number"
+              min={0}
+              step="0.01"
+              required
+              className="input"
+            />
           </Field>
           <Field label="Probability %">
-            <input name="probability" type="number" min={0} max={100} defaultValue={50} className="input" />
+            <input
+              name="probability"
+              type="number"
+              min={0}
+              max={100}
+              defaultValue={50}
+              className="input"
+            />
           </Field>
           <Field label="Expected close">
             <input name="expected_close" type="date" className="input" />
@@ -235,8 +401,12 @@ function Compose({
   const vars = {
     name: lead.student_name,
     agent,
-    course: lookups.courses.find((c) => c.id === lead.course_id)?.name ?? "the course",
-    university: lookups.universities.find((u) => u.id === lead.university_id)?.name ?? "the university",
+    course:
+      lookups.courses.find((c) => c.id === lead.course_id)?.name ??
+      "the course",
+    university:
+      lookups.universities.find((u) => u.id === lead.university_id)?.name ??
+      "the university",
     mobile: lead.mobile,
   };
   const target = channel === "email" ? lead.email : lead.mobile;
@@ -252,10 +422,19 @@ function Compose({
         const text = encodeURIComponent(body);
         setLink(
           channel === "email"
-            ? { href: `mailto:${lead.email}?subject=${encodeURIComponent(subject)}&body=${text}`, label: "Open in mail app to send" }
+            ? {
+                href: `mailto:${lead.email}?subject=${encodeURIComponent(subject)}&body=${text}`,
+                label: "Open in mail app to send",
+              }
             : channel === "sms"
-              ? { href: `sms:${lead.mobile}?body=${text}`, label: "Open in SMS app to send" }
-              : { href: `https://wa.me/${intl(lead.mobile)}?text=${text}`, label: "Open in WhatsApp to send" },
+              ? {
+                  href: `sms:${lead.mobile}?body=${text}`,
+                  label: "Open in SMS app to send",
+                }
+              : {
+                  href: `https://wa.me/${intl(lead.mobile)}?text=${text}`,
+                  label: "Open in WhatsApp to send",
+                },
         );
         toast("Saved to message log");
       } else {
@@ -269,7 +448,11 @@ function Compose({
   return (
     <form className="space-y-3" onSubmit={send}>
       <p className="text-sm text-muted">
-        To: <span className="font-semibold text-fg">{target || `no ${channel === "email" ? "email" : "mobile"} on this lead`}</span>
+        To:{" "}
+        <span className="font-semibold text-fg">
+          {target ||
+            `no ${channel === "email" ? "email" : "mobile"} on this lead`}
+        </span>
       </p>
       {templates.length > 0 && (
         <Select
@@ -285,31 +468,75 @@ function Compose({
           }}
         />
       )}
-      {channel === "email" && <input value={subject} onChange={(e) => setSubject(e.target.value)} required placeholder="Subject" aria-label="Subject" className="input" />}
-      <textarea value={body} onChange={(e) => setBody(e.target.value)} required rows={7} maxLength={channel === "sms" ? 600 : 5000} placeholder="Message" aria-label="Message" className="input" />
+      {channel === "email" && (
+        <input
+          value={subject}
+          onChange={(e) => setSubject(e.target.value)}
+          required
+          placeholder="Subject"
+          aria-label="Subject"
+          className="input"
+        />
+      )}
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        required
+        rows={7}
+        maxLength={channel === "sms" ? 600 : 5000}
+        placeholder="Message"
+        aria-label="Message"
+        className="input"
+      />
       <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" disabled={pending || !target || lead.dnd}>
-          {pending ? "Please wait..." : channel === "email" && emailLive ? "Send email" : "Save & continue"}
+          {pending
+            ? "Please wait..."
+            : channel === "email" && emailLive
+              ? "Send email"
+              : "Save & continue"}
         </Button>
         {link && (
-          <a href={link.href} target="_blank" rel="noopener noreferrer" className={btn("success")}>
+          <a
+            href={link.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={btn("success")}
+          >
             <ExternalLink size={15} /> {link.label}
           </a>
         )}
       </div>
       {!(channel === "email" && emailLive) && (
         <p className="text-xs text-muted">
-          The message is saved to this lead&apos;s history, then you send it from your own {channel === "email" ? "mail app" : channel === "sms" ? "SMS app" : "WhatsApp"}.
+          The message is saved to this lead&apos;s history, then you send it
+          from your own{" "}
+          {channel === "email"
+            ? "mail app"
+            : channel === "sms"
+              ? "SMS app"
+              : "WhatsApp"}
+          .
         </p>
       )}
     </form>
   );
 }
 
-function EnrollForm({ lead, lookups, enrollment }: { lead: Lead; lookups: Lookups; enrollment: Row | null }) {
+function EnrollForm({
+  lead,
+  lookups,
+  enrollment,
+}: {
+  lead: Lead;
+  lookups: Lookups;
+  enrollment: Row | null;
+}) {
   const [pending, start] = useTransition();
   const [v, setV] = useState({
-    university_id: String(enrollment?.university_id ?? lead.university_id ?? ""),
+    university_id: String(
+      enrollment?.university_id ?? lead.university_id ?? "",
+    ),
     course_id: String(enrollment?.course_id ?? lead.course_id ?? ""),
     fee_amount: String(enrollment?.fee_amount ?? ""),
     paid_amount: String(enrollment?.paid_amount ?? "0"),
@@ -317,24 +544,49 @@ function EnrollForm({ lead, lookups, enrollment }: { lead: Lead; lookups: Lookup
     enrollment_no: String(enrollment?.enrollment_no ?? ""),
     notes: String(enrollment?.notes ?? ""),
   });
-  const set = (k: keyof typeof v) => (e: { target: { value: string } }) => setV((old) => ({ ...old, [k]: e.target.value }));
-  const courses = lookups.courses.filter((c) => c.university_id === v.university_id);
+  const set = (k: keyof typeof v) => (e: { target: { value: string } }) =>
+    setV((old) => ({ ...old, [k]: e.target.value }));
+  const courses = lookups.courses.filter(
+    (c) => c.university_id === v.university_id,
+  );
 
   return (
     <form
       className="space-y-3"
       onSubmit={(e) => {
         e.preventDefault();
-        start(async () => void notify(await enrollLead(lead.id, { ...v, fee_amount: Number(v.fee_amount), paid_amount: Number(v.paid_amount) })));
+        start(
+          async () =>
+            void notify(
+              await enrollLead(lead.id, {
+                ...v,
+                fee_amount: Number(v.fee_amount),
+                paid_amount: Number(v.paid_amount),
+              }),
+            ),
+        );
       }}
     >
-      {enrollment && <Badge color="#16a34a">Enrolled on {fmtDate(String(enrollment.enrolled_on))}</Badge>}
+      {enrollment && (
+        <Badge color="#16a34a">
+          Enrolled on {fmtDate(String(enrollment.enrolled_on))}
+        </Badge>
+      )}
       <Field label="University" required>
         <Select
           required
           value={v.university_id}
-          options={lookups.universities.map((u) => ({ value: u.id, label: u.name }))}
-          onChange={(e) => setV((old) => ({ ...old, university_id: e.target.value, course_id: "" }))}
+          options={lookups.universities.map((u) => ({
+            value: u.id,
+            label: u.name,
+          }))}
+          onChange={(e) =>
+            setV((old) => ({
+              ...old,
+              university_id: e.target.value,
+              course_id: "",
+            }))
+          }
         />
       </Field>
       <Field label="Course" required>
@@ -344,29 +596,68 @@ function EnrollForm({ lead, lookups, enrollment }: { lead: Lead; lookups: Lookup
           options={courses.map((c) => ({ value: c.id, label: c.name }))}
           onChange={(e) => {
             const fee = courses.find((c) => c.id === e.target.value)?.fee;
-            setV((old) => ({ ...old, course_id: e.target.value, fee_amount: old.fee_amount || (fee != null ? String(fee) : "") }));
+            setV((old) => ({
+              ...old,
+              course_id: e.target.value,
+              fee_amount: old.fee_amount || (fee != null ? String(fee) : ""),
+            }));
           }}
         />
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Total fee" required>
-          <input type="number" min={0} step="0.01" required value={v.fee_amount} onChange={set("fee_amount")} className="input" />
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            required
+            value={v.fee_amount}
+            onChange={set("fee_amount")}
+            className="input"
+          />
         </Field>
         <Field label="Paid so far" required>
-          <input type="number" min={0} step="0.01" required value={v.paid_amount} onChange={set("paid_amount")} className="input" />
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            required
+            value={v.paid_amount}
+            onChange={set("paid_amount")}
+            className="input"
+          />
         </Field>
         <Field label="Enrolment date" required>
-          <input type="date" required value={v.enrolled_on} onChange={set("enrolled_on")} className="input" />
+          <input
+            type="date"
+            required
+            value={v.enrolled_on}
+            onChange={set("enrolled_on")}
+            className="input"
+          />
         </Field>
         <Field label="Enrolment no.">
-          <input value={v.enrollment_no} onChange={set("enrollment_no")} className="input" />
+          <input
+            value={v.enrollment_no}
+            onChange={set("enrollment_no")}
+            className="input"
+          />
         </Field>
       </div>
       <Field label="Notes">
-        <textarea rows={2} value={v.notes} onChange={set("notes")} className="input" />
+        <textarea
+          rows={2}
+          value={v.notes}
+          onChange={set("notes")}
+          className="input"
+        />
       </Field>
       <Button type="submit" disabled={pending}>
-        {pending ? "Please wait..." : enrollment ? "Update enrolment" : "Mark as enrolled"}
+        {pending
+          ? "Please wait..."
+          : enrollment
+            ? "Update enrolment"
+            : "Mark as enrolled"}
       </Button>
     </form>
   );

@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
-import { Nunito } from "next/font/google";
+import { Manrope } from "next/font/google";
 import { env } from "@/lib/env";
 import { Toaster } from "@/components/toast";
 import "./globals.css";
 
-const nunito = Nunito({ variable: "--font-nunito", subsets: ["latin"] });
+const manrope = Manrope({
+  variable: "--font-manrope",
+  subsets: ["latin"],
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: env.appName,
@@ -14,9 +18,11 @@ export const metadata: Metadata = {
 // Applies the saved theme before paint so there is no flash of the wrong theme.
 const themeScript = `try{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}`;
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={nunito.variable} suppressHydrationWarning>
+    <html lang="en" className={manrope.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>

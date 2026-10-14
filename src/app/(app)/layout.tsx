@@ -5,7 +5,11 @@ import { todayBounds } from "@/lib/utils";
 import { Sidebar } from "@/components/sidebar";
 import { Topbar } from "@/components/topbar";
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
+export default async function AppLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const { supabase, profile } = await getSession();
   const nav = navFor(profile.role);
 
@@ -22,11 +26,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
           pages={flatNav(nav)}
-          user={{ name: profile.full_name, code: profile.emp_code, role: profile.role }}
+          user={{
+            name: profile.full_name,
+            code: profile.emp_code,
+            role: profile.role,
+          }}
           company={env.companyName}
           dueFollowups={dueFollowups ?? 0}
         />
-        <main className="min-w-0 flex-1 p-4">{children}</main>
+        <main id="main-content" className="workspace-main min-w-0 flex-1">
+          {children}
+        </main>
       </div>
     </div>
   );
