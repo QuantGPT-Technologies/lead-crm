@@ -11,10 +11,11 @@ import {
   Users,
   Activity,
 } from "lucide-react";
+import { getDashboardCounts } from "@/lib/dashboard";
 import { getSession } from "@/lib/auth";
+import { createDashboardClient } from "@/lib/supabase/server";
 import { Card, btn } from "@/components/ui";
 import {
-  addDays,
   dateRange,
   fmtDateTime,
   one,
@@ -31,73 +32,32 @@ export default async function DashboardPage({
 }) {
   const sp = await searchParams;
   const { supabase, profile } = await getSession();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error("Your session expired. Please sign in again.");
+  const reports = createDashboardClient(session.access_token);
   const days = RANGES.includes(Number(one(sp.days)))
     ? Number(one(sp.days))
     : 30;
   const range = dateRange(undefined, undefined, days);
   const { start: today, end: tomorrow } = todayBounds();
-  const weekStart = addDays(tomorrow, -7);
-  const prevWeekStart = addDays(tomorrow, -14);
-  const count = async (
-    table: string,
-    col: string,
-    from: Date,
-    to: Date,
-    minePending = false,
-  ) => {
-    let q = supabase
-      .from(table)
-      .select("id", { count: "exact", head: true })
-      .gte(col, from.toISOString())
-      .lt(col, to.toISOString());
-    if (minePending)
-      q = q.eq("status", "pending").eq("assigned_to", profile.id);
-    return (await q).count ?? 0;
-  };
-  const [
-    leadsNow,
-    leadsPrev,
-    callsNow,
-    callsPrev,
-    enrolledNow,
-    enrolledPrev,
-    dueToday,
-    missed,
-    bySource,
-    daily,
-    recent,
-    nextTasks,
-  ] = await Promise.all([
-    count("leads", "created_at", weekStart, tomorrow),
-    count("leads", "created_at", prevWeekStart, weekStart),
-    count("call_logs", "called_at", weekStart, tomorrow),
-    count("call_logs", "called_at", prevWeekStart, weekStart),
-    count("enrollments", "created_at", weekStart, tomorrow),
-    count("enrollments", "created_at", prevWeekStart, weekStart),
-    count("tasks", "due_at", today, tomorrow, true),
-    supabase
-      .from("tasks")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "pending")
-      .eq("assigned_to", profile.id)
-      .lt("due_at", today.toISOString())
-      .then((r) => r.count ?? 0),
-    supabase.rpc("report_leads_by", {
+  const [counts, bySource, daily, recent, nextTasks] = await Promise.all([
+    getDashboardCounts(reports, profile.id, today, tomorrow),
+    reports.rpc("report_leads_by", {
       p_dim: "source",
       p_from: range.from.toISOString(),
       p_to: range.to.toISOString(),
     }),
-    supabase.rpc("report_daily", {
+    reports.rpc("report_daily", {
       p_from: range.from.toISOString(),
       p_to: range.to.toISOString(),
       p_tz: env.timezone,
     }),
-    supabase
+    reports
       .from("lead_activities")
       .select("id, lead_id, summary, created_at")
       .order("created_at", { ascending: false })
       .limit(8),
-    supabase
+    reports
       .from("tasks")
       .select("id, title, due_at, lead:leads(id, student_name)")
       .eq("assigned_to", profile.id)
@@ -105,6 +65,7 @@ export default async function DashboardPage({
       .order("due_at")
       .limit(4),
   ]);
+  const { leadsNow, leadsPrev, callsNow, callsPrev, enrolledNow, enrolledPrev, dueToday, missed } = counts;
   const rate = (won: number, total: number) =>
     total ? (won / total) * 100 : 0;
   const convNow = rate(enrolledNow, leadsNow);

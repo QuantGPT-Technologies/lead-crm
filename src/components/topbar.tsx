@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowUpRight,
@@ -15,7 +16,10 @@ import {
   User,
 } from "lucide-react";
 import { signOut } from "@/app/login/actions";
-import { PushRegister } from "@/components/push-register";
+const PushRegister = dynamic(
+  () => import("@/components/push-register").then((module) => module.PushRegister),
+  { ssr: false },
+);
 export function Topbar({
   pages,
   user,

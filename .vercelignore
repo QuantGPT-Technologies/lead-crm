@@ -1,0 +1,6 @@
+.demo/
+.next/
+node_modules/
+.env*
+coverage/
+*.tsbuildinfo

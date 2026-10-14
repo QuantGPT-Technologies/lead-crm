@@ -2,15 +2,34 @@ import "server-only";
 import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSession } from "@/lib/auth";
-import { createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient, createLookupClient } from "@/lib/supabase/server";
 import type { Lookups } from "@/lib/types";
 import { cleanSearch, isDateString, todayBounds, startOfDay, addDays } from "@/lib/utils";
 
-/** Dropdown data used across the app. Loaded once per request. */
+let batchUnavailableUntil = 0;
+/** Dropdown reads are cached for 60 seconds per verified session; edits invalidate the cache. */
 export const getLookups = cache(async (): Promise<Lookups> => {
   const { supabase } = await getSession();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error("Your session expired. Please sign in again.");
+  const lookupClient = createLookupClient(session.access_token);
+  const batched = Date.now() < batchUnavailableUntil ? null : await lookupClient.rpc("crm_lookups", undefined, { get: true });
+  if (batched && !batched.error && batched.data) {
+    const lookups = batched.data as Lookups;
+    const position = new Map(lookups.funnels.map((f, i) => [f.id, i]));
+    lookups.stages.sort((a, b) => (position.get(a.funnel_id) ?? 0) - (position.get(b.funnel_id) ?? 0) || a.sort_order - b.sort_order);
+    return lookups;
+  }
+  // Older databases remain usable until upgrade-002-performance.sql is applied.
+  if (batched?.error && !["PGRST202", "42883"].includes(batched.error.code)) {
+    throw new Error(`Could not load dropdowns: ${batched.error.message}`);
+  }
+  if (batched?.error) batchUnavailableUntil = Date.now() + 60_000;
   const active = <T>(table: string, cols: string, order = "name") =>
-    supabase.from(table).select(cols).eq("is_active", true).order(order).then((r) => (r.data ?? []) as T[]);
+    lookupClient.from(table).select(cols).eq("is_active", true).order(order).then((r) => {
+      if (r.error) throw new Error(`Could not load ${table}: ${r.error.message}`);
+      return (r.data ?? []) as T[];
+    });
 
   const [sources, universities, courses, funnels, stages, subStages, users, templates] = await Promise.all([
     active<Lookups["sources"][number]>("lead_sources", "id, name"),

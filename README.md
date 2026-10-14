@@ -53,6 +53,37 @@ http://localhost:3000. Sign in with `company@demo.test` / `Demo@1234`, then `EA0
 The app code is identical in demo and real mode; `.env.local` is ignored while the demo runs. Email OTP is not
 available in the demo. It is for viewing and testing only, not for production.
 
+For faster everyday browsing of the local demo, use:
+
+```bash
+npm run demo:fast
+```
+
+This builds the app with the local demo settings, then runs the optimized Next.js server at
+http://localhost:3000. Startup includes a build; pages do not compile as you browse. Existing `.demo/`
+data is preserved. Stop the current demo before switching modes. After editing the app, restart
+`demo:fast` to rebuild, or use `npm run demo` for live development updates. Do not use a plain
+`npm run build && npm start` for the demo: that builds with your Supabase `.env.local` settings instead.
+
+## Production performance on Vercel
+
+The existing Vercel project uses its configured production Supabase credentials. `vercel.json`
+places functions in Seoul (`icn1`), matching this project's database region. If the database moves,
+update this region too. Keep all `.env.local` files and the local `.demo/` stack out of deployments.
+
+Authenticated lookup reads cache for 60 seconds per bearer token; dashboard reads cache for 15 seconds
+per token. Authentication is checked on each request; database reads and cache refreshes enforce RLS. Successful CRM edits
+expire the corresponding cache tags so the next read sees the saved changes. Changes made directly
+in Supabase can take up to the cache lifetime to appear.
+
+Run `supabase/upgrade-002-performance.sql` in the production Supabase SQL Editor to activate batched
+lookup/dashboard reads, search indexes, and the faster daily report. This migration is idempotent and
+keeps existing row-level security. The app supports databases without this migration through its
+original query paths; short-lived caching still works. The local demo applies the migration on startup.
+
+Before deploying, run `npm run lint` and `npm run build`. Deploy to the already-linked project with
+`vercel --prod`. Vercel builds with its production environment variables, not the local demo variables.
+
 ## Signing in
 
 1. **Global Sign In** – the shared company email + password (`SETUP_GLOBAL_*`). Turn off with `AUTH_REQUIRE_GLOBAL_LOGIN=false`.

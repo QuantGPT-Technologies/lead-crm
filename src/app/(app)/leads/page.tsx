@@ -45,7 +45,6 @@ export default async function LeadListPage({
 }) {
   const sp = await searchParams;
   const { supabase, profile } = await getSession();
-  const lookups = await getLookups();
 
   const filters: LeadFilters = Object.fromEntries(
     LEAD_FILTER_KEYS.map((k) => [k, one(sp[k])]),
@@ -63,9 +62,10 @@ export default async function LeadListPage({
   )
     .order(sort, { ascending: asc, nullsFirst: false })
     .range((page - 1) * size, page * size - 1);
-  const [{ data, count, error }, maskSetting] = await Promise.all([
+  const [{ data, count, error }, maskSetting, lookups] = await Promise.all([
     query,
     getSetting(supabase, "mask_contacts_in_list", true),
+    getLookups(),
   ]);
 
   // A page number past the end (stale bookmark, or rows removed by a filter/delete) makes

@@ -1,6 +1,7 @@
 // Local demo: runs the CRM against a stand-in for Supabase so every page can be seen without a Supabase project.
 //
 //   npm run demo            start (keeps data between runs in .demo/)
+//   npm run demo:fast       build once at startup and run the optimized app
 //   npm run demo -- --reset wipe the demo data and start fresh
 //
 // What it starts, all on this machine:
@@ -24,6 +25,7 @@ const PG_PORT = 54329;
 const REST_PORT = 54330;
 const API_PORT = 54321;
 const APP_PORT = Number(process.env.PORT) || 3000;
+const PRODUCTION = process.argv.includes("--production");
 const JWT_SECRET = "local-demo-jwt-secret-not-for-production-use-0001";
 const POSTGREST_VERSION = "v16.4";
 const PASSWORD = "Demo@1234";
@@ -77,6 +79,9 @@ if (firstRun) {
   await seed();
   console.log("Demo data loaded.");
 }
+
+// Keep existing demo databases up to date without resetting their data.
+await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-002-performance.sql"), "utf8"));
 
 async function seed() {
   const one = async (sql, params) => (await db.query(sql, params)).rows[0];
@@ -291,7 +296,7 @@ for (let i = 0; i < 60; i++) {
   if (await fetch(`http://127.0.0.1:${REST_PORT}/`).then((r) => r.ok, () => false)) break;
   await new Promise((r) => setTimeout(r, 500));
 }
-run(process.execPath, [path.join(ROOT, "node_modules", "next", "dist", "bin", "next"), "dev", "-p", String(APP_PORT)], {
+const appEnv = {
   NEXT_PUBLIC_SUPABASE_URL: `http://127.0.0.1:${API_PORT}`,
   NEXT_PUBLIC_SUPABASE_ANON_KEY: ANON_KEY,
   SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY,
@@ -300,10 +305,40 @@ run(process.execPath, [path.join(ROOT, "node_modules", "next", "dist", "bin", "n
   AUTH_REQUIRE_OTP: "false",
   NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME || "Lead CRM",
   NEXT_PUBLIC_COMPANY_NAME: process.env.NEXT_PUBLIC_COMPANY_NAME || "Demo Company",
+};
+const nextBin = path.join(ROOT, "node_modules", "next", "dist", "bin", "next");
+
+// Install cleanup before the build so cancelling startup also stops the backend.
+let stopping = false;
+async function stop(code = 0) {
+  if (stopping) return;
+  stopping = true;
+  children.forEach((c) => c.kill());
+  await db.end().catch(() => {});
+  await pg.stop().catch(() => {});
+  process.exit(code);
+}
+process.on("SIGINT", () => void stop());
+process.on("SIGTERM", () => void stop());
+
+if (PRODUCTION) {
+  console.log("Building the optimized local app (no page compilation while you browse)...");
+  const build = run(process.execPath, [nextBin, "build"], { ...appEnv, NODE_ENV: "production" }, "app");
+  const code = await new Promise((resolve) => {
+    build.once("exit", resolve);
+    build.once("error", () => resolve(1));
+  });
+  if (code !== 0) await stop(1);
+}
+const app = run(process.execPath, [nextBin, PRODUCTION ? "start" : "dev", "-p", String(APP_PORT)], {
+  ...appEnv,
+  NODE_ENV: PRODUCTION ? "production" : "development",
 }, "app");
+app.once("exit", (code) => void stop(code ?? 1));
+app.once("error", () => void stop(1));
 
 console.log(`
-  Demo is starting at  http://localhost:${APP_PORT}
+  ${PRODUCTION ? "Optimized demo" : "Development demo"} is starting at  http://localhost:${APP_PORT}
 
   Step 1  Global Sign In   ${GLOBAL_EMAIL}  /  ${PASSWORD}
   Step 2  User Login       EA00000001 (admin)  /  ${PASSWORD}
@@ -311,15 +346,3 @@ console.log(`
 
   Press Ctrl+C to stop. Data is kept in .demo/ (npm run demo -- --reset to wipe).
 `);
-
-let stopping = false;
-async function stop() {
-  if (stopping) return;
-  stopping = true;
-  children.forEach((c) => c.kill());
-  await db.end().catch(() => {});
-  await pg.stop().catch(() => {});
-  process.exit(0);
-}
-process.on("SIGINT", stop);
-process.on("SIGTERM", stop);

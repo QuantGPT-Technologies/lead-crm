@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { getSession, isStaff } from "@/lib/auth";
 import { applyLeadFilters, chunk, getLookups, logActivity, type LeadFilters } from "@/lib/data";
 import { MASTERS, type MasterTable } from "@/lib/masters";
@@ -9,6 +9,8 @@ import type { ActionResult, Role } from "@/lib/types";
 import { isValidEmail, isValidMobile, normalizeMobile } from "@/lib/utils";
 
 const done = <T extends ActionResult>(res: T) => {
+  updateTag("crm-lookups");
+  updateTag("crm-dashboard");
   revalidatePath("/", "layout");
   return res;
 };

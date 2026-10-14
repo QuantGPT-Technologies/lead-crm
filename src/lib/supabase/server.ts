@@ -30,6 +30,29 @@ export function createAdminClient() {
   });
 }
 
+/** Read-only lookup cache, keyed by the verified user's bearer token. No session or lead data is cached. */
+export function createLookupClient(accessToken: string) {
+  return createCachedReadClient(accessToken, "crm-lookups", 60);
+}
+
+export function createDashboardClient(accessToken: string) {
+  return createCachedReadClient(accessToken, "crm-dashboard", 15);
+}
+
+function createCachedReadClient(accessToken: string, tag: string, seconds: number) {
+  return createPlainClient(env.supabaseUrl, env.supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      fetch: (input, init) => fetch(input, {
+        ...init,
+        cache: "force-cache",
+        next: { revalidate: seconds, tags: [tag] },
+      }),
+    },
+  });
+}
+
 /** Anonymous client that never stores a session (used to check a password without signing in). */
 export function createStatelessClient() {
   return createPlainClient(env.supabaseUrl, env.supabaseAnonKey, {

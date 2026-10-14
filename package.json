@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "setup:admin": "node scripts/setup-admin.mjs",
-    "demo": "node scripts/demo.mjs"
+    "demo": "node scripts/demo.mjs",
+    "demo:fast": "node scripts/demo.mjs --production"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

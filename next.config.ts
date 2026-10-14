@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Every page is per-user and behind login, so nothing is statically cached.
+  // Pages remain private and dynamic; only scoped read data uses explicit short-lived caches.
   serverExternalPackages: ["firebase-admin"],
   experimental: {
     serverActions: { bodySizeLimit: "8mb" },

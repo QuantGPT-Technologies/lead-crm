@@ -51,6 +51,7 @@ const ICONS: Record<string, LucideIcon> = {
 export function Sidebar({ nav, appName }: { nav: NavItem[]; appName: string }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [warmHref, setWarmHref] = useState<string | null>(null);
   const active = (href: string) =>
     pathname === href ||
     (href === "/leads" &&
@@ -108,6 +109,9 @@ export function Sidebar({ nav, appName }: { nav: NavItem[]; appName: string }) {
                   <Link
                     key={item.href}
                     href={item.href!}
+                  prefetch={warmHref === item.href ? true : null}
+                  onMouseEnter={() => setWarmHref(item.href!)}
+                  onFocus={() => setWarmHref(item.href!)}
                     className={cn(
                       "nav-link",
                       collapsed && "justify-center !px-0",

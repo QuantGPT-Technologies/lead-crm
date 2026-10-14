@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { z } from "zod";
 import { getSession, isStaff } from "@/lib/auth";
 import { chunk, getLookups, getSetting, logActivity } from "@/lib/data";
@@ -31,6 +31,7 @@ const LABELS: Record<string, string> = {
 };
 
 const done = (res: ActionResult = {}) => {
+  updateTag("crm-dashboard");
   revalidatePath("/", "layout");
   return res;
 };
