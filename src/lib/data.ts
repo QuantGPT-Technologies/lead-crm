@@ -57,6 +57,7 @@ export interface LeadFilters {
   course?: string;
   product?: string;
   priority?: string;
+  category?: string;
   attempt?: string; // "0" | "1" | "2" | "3+"
   followup?: string; // "today" | "missed"
   from?: string;
@@ -65,7 +66,7 @@ export interface LeadFilters {
 }
 
 export const LEAD_FILTER_KEYS: (keyof LeadFilters)[] = [
-  "q", "stage", "source", "owner", "university", "course", "product", "priority", "attempt", "followup", "from", "to", "batch",
+    "q", "stage", "source", "owner", "university", "course", "product", "priority", "category", "attempt", "followup", "from", "to", "batch",
 ];
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -90,6 +91,8 @@ export function applyLeadFilters<Q extends { eq: any; or: any; is: any; gte: any
   else if (id(f.owner)) q = q.eq("owner_id", f.owner);
   if (f.product) q = q.ilike("product", `%${cleanSearch(f.product)}%`);
   if (f.priority && ["hot", "warm", "cold"].includes(f.priority)) q = q.eq("priority", f.priority);
+    if (f.category === "none") q = q.is("category", null);
+    else if (f.category && ["A", "B", "C", "D"].includes(f.category)) q = q.eq("category", f.category);
   if (f.attempt === "3+") q = q.gte("attempt_count", 3);
   else if (f.attempt && /^[0-2]$/.test(f.attempt)) q = q.eq("attempt_count", Number(f.attempt));
   if (f.followup === "today") {

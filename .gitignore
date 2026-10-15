@@ -43,3 +43,7 @@ next-env.d.ts
 
 # local demo stack (npm run demo)
 .demo/
+
+# Private migration data, backups and spreadsheet sources
+.migration/
+/*.xlsx

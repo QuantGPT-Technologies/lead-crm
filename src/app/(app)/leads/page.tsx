@@ -21,6 +21,7 @@ import {
 } from "@/lib/utils";
 import { LeadFilterBar } from "./lead-filter-bar";
 import { LeadTable, type LeadRow } from "./lead-table";
+import { CategorySwitcher } from "./category-switcher";
 
 const SORTS = [
   "created_at",
@@ -32,7 +33,7 @@ const SORTS = [
 const SIZES = [25, 50, 100];
 
 const LIST_COLUMNS =
-  "id, lead_no, student_name, mobile, email, product, city, priority, attempt_count, next_followup_at, created_at, " +
+    "id, lead_no, student_name, mobile, email, product, city, priority, category, attempt_count, next_followup_at, created_at, " +
   "source:lead_sources(name), university:universities(name), course:courses(name), stage:stages(name, color), " +
   "sub_stage:sub_stages(name), owner:profiles!leads_owner_id_fkey(full_name)";
 
@@ -102,6 +103,7 @@ export default async function LeadListPage({
     product: (l.product as string | null) ?? "",
     city: (l.city as string | null) ?? "",
     priority: l.priority as string,
+      category: (l.category as string | null) ?? "Uncategorized",
     attempts: l.attempt_count as number,
     followup: fmtDateTime(l.next_followup_at as string | null),
     overdue:
@@ -141,7 +143,7 @@ export default async function LeadListPage({
             <List size={14} />
             List
           </Link>
-          <Link href="/leads/kanban" className="flex items-center gap-2">
+            <Link href={filters.category ? `/leads/kanban?${new URLSearchParams({ category: filters.category })}` : "/leads/kanban"} className="flex items-center gap-2">
             <Columns3 size={14} />
             Board
           </Link>
@@ -151,6 +153,7 @@ export default async function LeadListPage({
           New lead
         </Link>
       </PageHeader>
+        <CategorySwitcher current={params} />
       <Card className="flex flex-wrap items-center gap-2 p-4">
         <LeadFilterBar
           lookups={lookups}

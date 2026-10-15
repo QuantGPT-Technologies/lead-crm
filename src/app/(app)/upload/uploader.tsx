@@ -66,7 +66,7 @@ export function Uploader({ sources }: { sources: Named[] }) {
       </div>
       <p className="text-xs text-muted">
         Required columns: <b>Name</b> and <b>Mobile</b>. Optional: Email, Alt Mobile, City, State, University, Course, Source, Product, Campaign, Medium, Qualification, Remarks.
-        Leads are added to the unassigned pool; mobiles that already exist are skipped, never overwritten.
+        Each valid row is added as a separate lead in the unassigned pool, including rows with repeated phone numbers.
       </p>
 
       {rows.length > 0 && (

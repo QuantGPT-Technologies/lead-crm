@@ -115,7 +115,7 @@ function display(field: string, value: unknown, lk: Lookups): string {
 }
 
 const dbError = (e: { code?: string; message: string }) =>
-  e.code === "23505" ? "A lead with this mobile number already exists" : e.code === "42501" ? "You do not have permission to do this" : e.message;
+  e.code === "23505" ? "A lead with this identifier already exists" : e.code === "42501" ? "You do not have permission to do this" : e.message;
 
 const isUuid = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v);
 const MAX_AMOUNT = 9_999_999_999; // money columns are numeric(12, 2)
@@ -300,6 +300,17 @@ export async function deleteLeads(ids: string[]): Promise<ActionResult> {
   const { error, count } = await supabase.from("leads").delete({ count: "exact" }).in("id", parsed.data);
   if (error) return { error: dbError(error) };
   return done({ message: `${count ?? 0} lead(s) deleted` });
+}
+
+export async function moveCategory(ids: string[], category: string | null): Promise<ActionResult> {
+  const { supabase, profile } = await getSession();
+  if (profile.role !== "admin") return { error: "Only admins can change lead categories" };
+  const parsed = idList.safeParse(ids);
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (category !== null && !["A", "B", "C", "D"].includes(category)) return { error: "Choose category A, B, C or D" };
+  const { data, error } = await supabase.from("leads").update({ category }).in("id", parsed.data).select("id");
+  if (error) return { error: dbError(error) };
+  return done({ message: `${data?.length ?? 0} lead(s) moved to ${category ? `category ${category}` : "Uncategorized"}` });
 }
 
 export async function rechurnLead(id: string, reason: string, ownerId: string | null): Promise<ActionResult> {

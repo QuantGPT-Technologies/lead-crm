@@ -63,6 +63,7 @@ export interface Lead {
   medium: string | null;
   product: string | null;
   priority: "hot" | "warm" | "cold";
+  category: "A" | "B" | "C" | "D" | null;
   university_id: string | null;
   course_id: string | null;
   stage_id: string | null;

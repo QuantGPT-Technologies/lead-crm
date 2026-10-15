@@ -1,4 +1,4 @@
-# Lead CRM
+# SUCCESS MENTORIX CRM
 
 In-house lead management CRM for education sales (single company).
 Built with **Next.js 16 (App Router) + Supabase (Postgres, Auth, Row Level Security)**, with optional **Firebase** push reminders.
@@ -84,6 +84,46 @@ original query paths; short-lived caching still works. The local demo applies th
 Before deploying, run `npm run lint` and `npm run build`. Deploy to the already-linked project with
 `vercel --prod`. Vercel builds with its production environment variables, not the local demo variables.
 
+## Excel replacement and lead categories
+
+Apply [`supabase/upgrade-003-lead-categories.sql`](supabase/upgrade-003-lead-categories.sql)
+in the production SQL Editor before deploying the category UI. The local demo applies it on startup.
+Apply `supabase/upgrade-004-separate-sheet-leads.sql` after upgrade-003 to allow repeated phone numbers and category D.
+Categories are A, B, C and D. Manual/CSV leads start Uncategorized; the four workbooks map to A/B/C/D in the order below. All users can view/filter
+categories within their existing lead visibility. Only active admins can change them, including through
+direct database requests. Category changes are recorded in the lead timeline.
+
+The four supplied Excel files can be staged with `python scripts/prepare-excel-import.py`
+(requires Python `openpyxl`). Inspect the counts with
+`node scripts/migrate-excel.mjs --target=local` or `--target=prod`.
+Adding `--replace-leads` backs up leads and their dependent activity, then replaces only leads imported from these four workbooks. Other leads are preserved.
+Users, settings and existing lookup records are retained. The local replacement is transactional;
+production REST replacement uses batches and should run during a quiet period. Do not rerun a failed
+production replacement blindly: its private run manifest records completed batches and backup location.
+
+Every valid workbook row becomes an independent lead, even when a phone repeats within or between files.
+A = `12th passed out 2026.xlsx`; B = `DOC-20260912-WA0007.xlsx`;
+C = `DOC-20260912-WA0008.xlsx`; D = `UG passed out 2026 database.xlsx`.
+Each row has a stable source-row UUID for retry-safe imports; phones are never used as identifiers.
+Original source values, father names and school details are preserved in Internal Notes. Invalid phone/name rows are quarantined and malformed emails are
+omitted from the email field while retained in source details. The ignored `.migration/` directory
+contains the report, rejected rows, staged leads, and backups; keep these private.
+
+## Kanban stages
+
+The board uses these stages in order: Not Contacted; Phone Switched Off / Ringing;
+Contacted; Interested; Not Interested; DND / Wrong No. / Not In Service; Counselling Done;
+Application Started; Registration Done; Application Drop; Qualified.
+Registration Done retains the former Enrolled stage's won status. Not Interested,
+DND / Wrong No. / Not In Service, and Application Drop are lost stages.
+
+Fresh schemas contain this layout. Existing databases can apply it with
+`node scripts/configure-kanban.mjs --target=local --apply` or `--target=prod --apply`.
+The script backs up stage configuration and reuses existing stage IDs. It retires unused old
+stages and refuses to retire any stage containing leads. The demo applies this configuration
+once, then preserves subsequent stage edits made in Configuration → Masters.
+Stage settings are read from `supabase/kanban-stages.json`.
+
 ## Signing in
 
 1. **Global Sign In** – the shared company email + password (`SETUP_GLOBAL_*`). Turn off with `AUTH_REQUIRE_GLOBAL_LOGIN=false`.
@@ -113,7 +153,7 @@ These rules are enforced in the database (Row Level Security in `schema.sql`), n
 | --- | --- |
 | Dashboard | 7-day KPIs vs the previous week, leads by source, leads vs enrolments chart, recent activity |
 | Search Lead | find a lead by name, mobile, email or lead number |
-| Upload | bulk import a CSV into the unassigned pool; duplicates (by mobile) are skipped and reported |
+| Upload | bulk import a CSV into the unassigned pool; each valid row is retained, including repeated phones |
 | Distribute | share unassigned leads equally (round robin) between chosen users |
 | Data Allotment | per-user load; move leads between users or back to the pool |
 | Lead → Kanban / List / Add | drag between stages; filterable, sortable list with bulk actions; add form |

@@ -17,6 +17,7 @@ import http from "node:http";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import EmbeddedPostgres from "embedded-postgres";
+import { configureLocalKanban } from "./configure-kanban.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const DEMO = path.join(ROOT, ".demo");
@@ -82,6 +83,9 @@ if (firstRun) {
 
 // Keep existing demo databases up to date without resetting their data.
 await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-002-performance.sql"), "utf8"));
+await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-003-lead-categories.sql"), "utf8"));
+await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-004-separate-sheet-leads.sql"), "utf8"));
+await configureLocalKanban(db, { once: true });
 
 async function seed() {
   const one = async (sql, params) => (await db.query(sql, params)).rows[0];
@@ -104,7 +108,7 @@ async function seed() {
   const first = ["Aarav", "Diya", "Kabir", "Isha", "Rohan", "Sneha", "Vikram", "Tara", "Nikhil", "Pooja", "Farhan", "Leela", "Sameer", "Anika", "Dev", "Mira"];
   const last = ["Sharma", "Verma", "Nair", "Khan", "Patel", "Iyer", "Singh", "Das", "Mehta", "Joshi", "Gupta"];
   const cities = [["Delhi", "Delhi"], ["Mumbai", "Maharashtra"], ["Pune", "Maharashtra"], ["Bengaluru", "Karnataka"], ["Jaipur", "Rajasthan"], ["Lucknow", "Uttar Pradesh"]];
-  const stagePlan = ["Not Contacted", "Not Contacted", "Not Contacted", "Contacted", "Contacted", "Interested", "Interested", "Application Started", "Payment Pending", "Enrolled", "Not Interested", "Not Contacted", "Junk"];
+  const stagePlan = ["Not Contacted", "Not Contacted", "Phone Switched Off / Ringing", "Contacted", "Interested", "Counselling Done", "Application Started", "Qualified", "Registration Done", "Not Interested", "Application Drop", "DND / Wrong No. / Not In Service"];
   const owners = [...agents, agents[0], manager, null, agents[1]];
   const day = 86_400_000;
   const cap = (ms) => new Date(Math.min(ms, Date.now())); // nothing in the sample history happens in the future
@@ -138,7 +142,7 @@ async function seed() {
       await log("call", `Logged a call (${outcome.replace("_", " ")})`, { fields: { Attempt: String(c + 1) } }, at);
     }
     if (stageName !== "Not Contacted") await log("stage_change", `Moved ${name} to ${stageName}`, { fields: { Stage: `Not Contacted → ${stageName}` } }, cap(created.getTime() + day));
-    if (owner && ["Contacted", "Interested", "Application Started", "Payment Pending"].includes(stageName)) {
+    if (owner && ["Contacted", "Interested", "Counselling Done", "Application Started", "Qualified"].includes(stageName)) {
       const due = new Date(new Date().setHours(11 + (i % 7), 0, 0, 0) + ((i % 5) - 2) * day); // spread over missed / today / upcoming
       await db.query("insert into tasks (lead_id, title, due_at, assigned_to, created_by) values ($1,$2,$3,$4,$4)", [lead.id, i % 2 ? "Follow up call" : "Share fee structure", due, owner]);
     }
@@ -146,7 +150,7 @@ async function seed() {
       await db.query("insert into opportunities (lead_id, title, amount, probability, expected_close, status, created_by) values ($1,$2,$3,$4,$5,$6,$7)", [lead.id, `${course.name} admission`, course.fee, 40 + (i % 5) * 10, new Date(Date.now() + 14 * day), i % 11 === 0 ? "lost" : "open", actor]);
       await db.query("insert into messages (lead_id, channel, recipient, subject, body, status, sent_by) values ($1,'email',$2,$3,$4,'logged',$5)", [lead.id, `${first[i % first.length].toLowerCase()}@example.com`, `Details for ${course.name}`, `Hi ${name}, sharing the course details as discussed.`, actor]);
     }
-    if (stageName === "Enrolled") {
+    if (stageName === "Registration Done") {
       const paid = Math.round(Number(course.fee) * [1, 0.5, 0.25][i % 3]);
       await db.query("insert into enrollments (lead_id, enrollment_no, university_id, course_id, fee_amount, paid_amount, enrolled_on, created_by, created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)", [lead.id, `ENR${1000 + i}`, uni, course.id, course.fee, paid, cap(created.getTime() + 3 * day), actor, cap(created.getTime() + 3 * day)]);
       await log("enrolled", `Enrolled this lead in ${course.name}`, { fields: { Fee: String(course.fee), Paid: String(paid) } }, cap(created.getTime() + 3 * day));
@@ -303,8 +307,8 @@ const appEnv = {
   APP_SECRET: "local-demo-app-secret-0123456789",
   AUTH_REQUIRE_GLOBAL_LOGIN: "true",
   AUTH_REQUIRE_OTP: "false",
-  NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME || "Lead CRM",
-  NEXT_PUBLIC_COMPANY_NAME: process.env.NEXT_PUBLIC_COMPANY_NAME || "Demo Company",
+  NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME || "SUCCESS MENTORIX CRM",
+  NEXT_PUBLIC_COMPANY_NAME: process.env.NEXT_PUBLIC_COMPANY_NAME || "SuccessMentorix pvt. ltd",
 };
 const nextBin = path.join(ROOT, "node_modules", "next", "dist", "bin", "next");
 

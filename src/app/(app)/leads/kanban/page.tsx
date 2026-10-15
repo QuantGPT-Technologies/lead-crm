@@ -5,6 +5,7 @@ import { applyLeadFilters, getLookups, type LeadFilters } from "@/lib/data";
 import { Card, PageHeader, Select, btn } from "@/components/ui";
 import { one, type SearchParams } from "@/lib/utils";
 import { Kanban, type KanbanCard } from "./kanban";
+import { CategorySwitcher } from "../category-switcher";
 
 const PER_COLUMN = 40;
 
@@ -20,6 +21,7 @@ export default async function KanbanPage({
     q: one(sp.q),
     source: one(sp.source),
     owner: one(sp.owner),
+      category: one(sp.category),
   };
 
   const columns = await Promise.all(
@@ -67,7 +69,7 @@ export default async function KanbanPage({
         description="See the journey. Move relationships forward, one stage at a time."
       >
         <div className="segmented">
-          <Link href="/leads" className="flex items-center gap-2">
+            <Link href={filters.category ? `/leads?${new URLSearchParams({ category: filters.category })}` : "/leads"} className="flex items-center gap-2">
             <List size={14} />
             List
           </Link>
@@ -81,8 +83,12 @@ export default async function KanbanPage({
           </Link>
         </div>
       </PageHeader>
+        <div className="mb-4">
+          <CategorySwitcher current={{ ...filters }} path="/leads/kanban" />
+        </div>
       <Card className="mb-6 p-4">
         <form className="flex flex-wrap items-center gap-2">
+            {filters.category && <input type="hidden" name="category" value={filters.category} />}
           <input
             name="q"
             defaultValue={filters.q}

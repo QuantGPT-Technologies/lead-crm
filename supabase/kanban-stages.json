@@ -1,0 +1,13 @@
+[
+  { "name": "Not Contacted", "color": "#64748b" },
+  { "name": "Phone Switched Off / Ringing", "color": "#f59e0b" },
+  { "name": "Contacted", "color": "#0ea5e9" },
+  { "name": "Interested", "color": "#6366f1" },
+  { "name": "Not Interested", "color": "#ef4444", "is_lost": true },
+  { "name": "DND / Wrong No. / Not In Service", "color": "#78716c", "is_lost": true, "previous_name": "Junk" },
+  { "name": "Counselling Done", "color": "#14b8a6" },
+  { "name": "Application Started", "color": "#a855f7" },
+  { "name": "Registration Done", "color": "#16a34a", "is_won": true, "previous_name": "Enrolled" },
+  { "name": "Application Drop", "color": "#f97316", "is_lost": true },
+  { "name": "Qualified", "color": "#0284c7" }
+]

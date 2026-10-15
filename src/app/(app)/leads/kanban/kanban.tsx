@@ -107,14 +107,14 @@ export function Kanban({
           )}
         >
           <header className="flex items-center justify-between px-4 py-4 text-xs font-semibold">
-            <span className="flex items-center gap-2">
+              <span className="flex min-w-0 flex-1 items-center gap-2 pr-2">
               <span
-                className="h-2 w-2 rounded-full"
+                  className="h-2 w-2 shrink-0 rounded-full"
                 style={{ background: col.color }}
               />
-              {col.name}
+                <span>{col.name}</span>
             </span>
-            <span className="rounded-md bg-card px-2 text-[10px] leading-6 text-muted">
+              <span className="shrink-0 rounded-md bg-card px-2 text-[10px] leading-6 text-muted">
               {col.total}
             </span>
           </header>

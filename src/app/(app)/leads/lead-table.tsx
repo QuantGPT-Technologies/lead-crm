@@ -15,7 +15,8 @@ import { Badge, Button, Empty, Modal, Select } from "@/components/ui";
 import { notify } from "@/components/toast";
 import type { Role } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { assignLeads, bulkStage, deleteLeads } from "./actions";
+import { assignLeads, bulkStage, deleteLeads, moveCategory } from "./actions";
+import { CATEGORY_OPTIONS } from "@/lib/lead-categories";
 
 export interface LeadRow {
   id: string;
@@ -33,6 +34,7 @@ export interface LeadRow {
   product: string;
   city: string;
   priority: string;
+  category: string;
   attempts: number;
   followup: string;
   overdue: boolean;
@@ -54,6 +56,7 @@ const COLUMNS: {
   { key: "course", label: "Course" },
   { key: "lead_no", label: "Lead No", sort: "lead_no" },
   { key: "stage", label: "Stage" },
+    { key: "category", label: "Category" },
   { key: "subStage", label: "Sub Stage" },
   { key: "source", label: "Source" },
   { key: "owner", label: "Lead Owner" },
@@ -74,6 +77,7 @@ const DEFAULT_HIDDEN = JSON.stringify(
         "mobile",
         "course",
         "stage",
+          "category",
         "owner",
         "followup",
         "priority",
@@ -214,6 +218,17 @@ export function LeadTable({
               />
             )}
             {role === "admin" && (
+                <Select
+                  aria-label="Move selected leads to category"
+                  options={[...CATEGORY_OPTIONS, { value: "none", label: "Uncategorized" }]}
+                  placeholder="Move to category..."
+                  value=""
+                  disabled={pending}
+                  className="!h-9 !w-44"
+                  onChange={(e) => e.target.value && run(() => moveCategory(ids, e.target.value === "none" ? null : e.target.value))}
+                />
+              )}
+              {role === "admin" && (
               <Button
                 variant="danger"
                 disabled={pending}

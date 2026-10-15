@@ -32,7 +32,8 @@ import { Badge, Button, Card, Empty, Select, btn } from "@/components/ui";
 import { notify } from "@/components/toast";
 import type { Activity, Lead, Lookups, Role, Row } from "@/lib/types";
 import { cn, fmtDate, fmtDateTime } from "@/lib/utils";
-import { completeTask, postLead, rechurnLead, updateLead } from "../actions";
+import { completeTask, postLead, rechurnLead, updateLead, moveCategory } from "../actions";
+import { CATEGORY_OPTIONS } from "@/lib/lead-categories";
 import {
   initialValues,
   payload,
@@ -152,6 +153,17 @@ export function LeadEditor(p: EditorProps) {
           </div>
         </div>
         <Badge color={stage?.color}>{stage?.name ?? "New lead"}</Badge>
+          {me.role === "admin" ? (
+            <Select
+              aria-label="Lead category"
+              options={[{ value: "none", label: "Uncategorized" }, ...CATEGORY_OPTIONS]}
+              placeholder={null}
+              value={lead.category ?? "none"}
+              disabled={pending}
+              className="!w-44"
+              onChange={(e) => start(async () => { notify(await moveCategory([lead.id], e.target.value === "none" ? null : e.target.value)); })}
+            />
+          ) : <Badge>{lead.category ? `Category ${lead.category}` : "Uncategorized"}</Badge>}
       </div>
       <div className="flex flex-wrap gap-2" aria-label="Lead actions">
         {RAIL.filter(([m]) => m !== "assign" || isStaff).map(

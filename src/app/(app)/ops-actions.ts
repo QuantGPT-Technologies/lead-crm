@@ -44,7 +44,7 @@ export interface UploadResult extends ActionResult {
   problems?: string[];
 }
 
-/** Imports parsed CSV rows as unassigned leads. Existing mobiles are skipped, never overwritten. */
+/** Imports each valid CSV row as an independent unassigned lead. */
 export async function uploadLeads(fileName: string, rows: Record<string, string>[], defaultSourceId: string): Promise<UploadResult> {
   const { supabase, profile } = await getSession();
   if (!isStaff(profile.role)) return { error: "Only managers and admins can upload leads" };
@@ -63,7 +63,6 @@ export async function uploadLeads(fileName: string, rows: Record<string, string>
   if (!mapped.has("student_name") || !mapped.has("mobile")) return { error: 'The file needs at least a "Name" column and a "Mobile" column' };
 
   const problems: string[] = [];
-  const seen = new Set<string>();
   const clean: Record<string, unknown>[] = [];
   let duplicates = 0;
   const firstStage = lk.stages[0]?.id ?? null;
@@ -77,8 +76,6 @@ export async function uploadLeads(fileName: string, rows: Record<string, string>
     const note = (why: string) => problems.length < 50 && problems.push(`Row ${line}: ${why}`);
     if (!r.student_name || r.student_name.length < 2) return note("name is missing");
     if (!isValidMobile(mobile)) return note(`mobile "${r.mobile}" is not valid`);
-    if (seen.has(mobile)) return void duplicates++;
-    seen.add(mobile);
 
     const university = r._university ? byName(lk.universities, r._university) : undefined;
     const course = r._course ? lk.courses.find((c) => c.name.toLowerCase() === r._course.toLowerCase() && (!university || c.university_id === university.id)) : undefined;
@@ -116,7 +113,7 @@ export async function uploadLeads(fileName: string, rows: Record<string, string>
   for (const part of chunk(clean, 500)) {
     const { data, error } = await supabase
       .from("leads")
-      .upsert(part.map((l) => ({ ...l, upload_batch_id: batch.id })), { onConflict: "mobile", ignoreDuplicates: true })
+        .insert(part.map((l) => ({ ...l, upload_batch_id: batch.id })))
       .select("id");
     if (error) return { error: `Upload stopped after ${insertedIds.length} leads: ${msg(error)}` };
     insertedIds.push(...(data ?? []).map((d) => d.id as string));

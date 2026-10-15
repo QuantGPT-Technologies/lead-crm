@@ -164,7 +164,7 @@ create table leads (
                     default to_char(now(), 'YYMM') || lpad(nextval('lead_no_seq')::text, 10, '0'),
   -- client
   student_name      text not null,
-  mobile            text not null unique,
+  mobile            text not null,
   alt_mobile        text,
   email             text,
   gender            text check (gender in ('male', 'female', 'other')),
@@ -575,20 +575,22 @@ insert into lead_sources (name) values
   ('Website'), ('Facebook'), ('Instagram'), ('Google Ads'), ('Referral'), ('Walk-in'), ('Agent'), ('Bulk Upload');
 
 insert into stage_funnels (name, sort_order) values
-  ('Not Contacted Stages', 1), ('Contacted Stages', 2), ('Application Stages', 3),
-  ('Enrolled Stages', 4), ('Closed Stages', 5);
+  ('Lead Pipeline', 1);
 
 insert into stages (funnel_id, name, sort_order, color, is_won, is_lost)
 select f.id, v.name, v.sort_order, v.color, v.is_won, v.is_lost
 from (values
-  ('Not Contacted Stages', 'Not Contacted',       1, '#64748b', false, false),
-  ('Contacted Stages',     'Contacted',           1, '#0ea5e9', false, false),
-  ('Contacted Stages',     'Interested',          2, '#6366f1', false, false),
-  ('Application Stages',   'Application Started', 1, '#a855f7', false, false),
-  ('Application Stages',   'Payment Pending',     2, '#f59e0b', false, false),
-  ('Enrolled Stages',      'Enrolled',            1, '#16a34a', true,  false),
-  ('Closed Stages',        'Not Interested',      1, '#ef4444', false, true),
-  ('Closed Stages',        'Junk',                2, '#78716c', false, true)
+  ('Lead Pipeline', 'Not Contacted',                       1, '#64748b', false, false),
+  ('Lead Pipeline', 'Phone Switched Off / Ringing',         2, '#f59e0b', false, false),
+  ('Lead Pipeline', 'Contacted',                           3, '#0ea5e9', false, false),
+  ('Lead Pipeline', 'Interested',                          4, '#6366f1', false, false),
+  ('Lead Pipeline', 'Not Interested',                      5, '#ef4444', false, true),
+  ('Lead Pipeline', 'DND / Wrong No. / Not In Service',     6, '#78716c', false, true),
+  ('Lead Pipeline', 'Counselling Done',                    7, '#14b8a6', false, false),
+  ('Lead Pipeline', 'Application Started',                 8, '#a855f7', false, false),
+  ('Lead Pipeline', 'Registration Done',                   9, '#16a34a', true,  false),
+  ('Lead Pipeline', 'Application Drop',                   10, '#f97316', false, true),
+  ('Lead Pipeline', 'Qualified',                          11, '#0284c7', false, false)
 ) as v (funnel, name, sort_order, color, is_won, is_lost)
 join stage_funnels f on f.name = v.funnel;
 
@@ -600,10 +602,10 @@ from (values
   ('Contacted', 'Switched Off', 3), ('Contacted', 'Busy', 4),
   ('Interested', 'Details Shared', 1), ('Interested', 'Counselling Done', 2), ('Interested', 'Follow Up', 3),
   ('Application Started', 'Documents Pending', 1), ('Application Started', 'Form Filled', 2),
-  ('Payment Pending', 'Payment Link Shared', 1), ('Payment Pending', 'Partial Payment', 2),
-  ('Enrolled', 'Fee Paid', 1),
+  ('Application Started', 'Payment Link Shared', 3), ('Application Started', 'Partial Payment', 4),
+  ('Registration Done', 'Fee Paid', 1),
   ('Not Interested', 'Fee Issue', 1), ('Not Interested', 'Joined Elsewhere', 2), ('Not Interested', 'Not Eligible', 3),
-  ('Junk', 'Invalid Number', 1), ('Junk', 'Duplicate', 2), ('Junk', 'Wrong Number', 3)
+  ('DND / Wrong No. / Not In Service', 'Invalid Number', 1), ('DND / Wrong No. / Not In Service', 'Duplicate', 2), ('DND / Wrong No. / Not In Service', 'Wrong Number', 3)
 ) as v (stage, name, sort_order)
 join stages s on s.name = v.stage;
 
@@ -624,3 +626,58 @@ insert into message_templates (channel, name, subject, body) values
 insert into app_settings (key, value) values
   ('lead_post_webhook', '""'::jsonb),
   ('mask_contacts_in_list', 'true'::jsonb);
+
+-- Lead categories (also available separately for existing databases).
+-- Idempotent. Apply to production in the Supabase SQL Editor.
+begin;
+alter table public.leads add column if not exists category text
+  check (category in ('A', 'B', 'C'));
+create index if not exists leads_category_created_idx on public.leads(category, created_at desc);
+
+-- Enforce the privilege even for direct REST/database writes.
+create or replace function public.guard_lead_category() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if current_user in ('authenticated', 'anon') then
+    if (tg_op = 'INSERT' and new.category is not null)
+      or (tg_op = 'UPDATE' and new.category is distinct from old.category) then
+      if public.app_role() is distinct from 'admin'::public.user_role then
+        raise exception 'Only admins can change lead categories' using errcode = '42501';
+      end if;
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists leads_category_guard on public.leads;
+create trigger leads_category_guard before insert or update on public.leads
+  for each row execute function public.guard_lead_category();
+
+-- Category changes and their history commit together.
+create or replace function public.audit_lead_category() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if new.category is distinct from old.category then
+    insert into public.lead_activities(lead_id, actor_id, type, summary, details)
+    values (new.id, auth.uid(), 'category_change',
+      'Category changed to ' || coalesce(new.category, 'Uncategorized'),
+      jsonb_build_object('fields', jsonb_build_object('Category',
+        coalesce(old.category, 'Uncategorized') || ' → ' || coalesce(new.category, 'Uncategorized'))));
+  end if;
+  return null;
+end $$;
+drop trigger if exists leads_category_audit on public.leads;
+create trigger leads_category_audit after update on public.leads
+  for each row execute function public.audit_lead_category();
+notify pgrst, 'reload schema';
+commit;
+
+-- Independent spreadsheet rows, including repeated phone numbers.
+-- Run after upgrade-003. Keep independent lead records even when phones repeat.
+begin;
+alter table public.leads drop constraint if exists leads_category_check;
+alter table public.leads add constraint leads_category_check check (category in ('A', 'B', 'C', 'D'));
+alter table public.leads drop constraint if exists leads_mobile_key;
+create index if not exists leads_mobile_idx on public.leads(mobile);
+-- Existing category permission and audit triggers remain in effect.
+notify pgrst, 'reload schema';
+commit;
