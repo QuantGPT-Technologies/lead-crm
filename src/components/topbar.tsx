@@ -7,7 +7,6 @@ import {
   ArrowUpRight,
   Bell,
   ChevronDown,
-  Leaf,
   LogOut,
   Menu,
   Moon,
@@ -16,6 +15,7 @@ import {
   User,
 } from "lucide-react";
 import { signOut } from "@/app/login/actions";
+import { BrandLogo } from "@/components/brand-logo";
 const PushRegister = dynamic(
   () => import("@/components/push-register").then((module) => module.PushRegister),
   { ssr: false },
@@ -125,7 +125,7 @@ export function Topbar({
         )}
       </div>
       <div className="hidden min-w-0 items-center gap-2 lg:flex">
-        <Leaf size={14} className="text-muted" />
+          <BrandLogo size={20} />
         <span className="max-w-36 truncate text-xs text-muted">{company}</span>
         <span className="text-line">/</span>
         <span className="whitespace-nowrap text-xs font-semibold">

@@ -3,6 +3,7 @@ import { env, requireGlobalLogin, requireOtp } from "@/lib/env";
 import { readSigned } from "@/lib/signed-cookie";
 import { one, type SearchParams } from "@/lib/utils";
 import { LoginFlow } from "./login-flow";
+import { BrandLogo } from "@/components/brand-logo";
 export default async function LoginPage({
   searchParams,
 }: {
@@ -18,10 +19,8 @@ export default async function LoginPage({
     <main className="grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
       <section className="login-story relative hidden flex-col justify-between overflow-hidden p-12 lg:flex xl:p-16">
         <div className="relative z-10 flex items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/25">
-            <Leaf size={23} strokeWidth={1.5} />
-          </span>
-          <span className="text-xl font-semibold tracking-tight">
+            <BrandLogo size={44} />
+            <span className="whitespace-nowrap text-xl font-semibold tracking-tight">
             {env.appName}
           </span>
         </div>
@@ -64,9 +63,9 @@ export default async function LoginPage({
         </div>
       </section>
       <section className="flex min-w-0 flex-col justify-between px-6 py-8 sm:px-12 lg:px-16 xl:px-24">
-        <div className="flex items-center justify-between">
-          <span className="flex items-center gap-2 text-lg font-bold lg:invisible">
-            <Leaf size={20} />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="flex items-center gap-2 whitespace-nowrap text-sm font-bold sm:text-lg lg:invisible">
+              <BrandLogo size={32} />
             {env.appName}
           </span>
           <span className="rounded-full border border-line px-3 py-1.5 text-[10px] text-muted">

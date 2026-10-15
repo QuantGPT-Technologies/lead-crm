@@ -13,7 +13,6 @@ import {
   GraduationCap,
   History,
   LayoutDashboard,
-  Leaf,
   MessagesSquare,
   PanelLeftClose,
   PanelLeftOpen,
@@ -29,6 +28,7 @@ import {
 } from "lucide-react";
 import type { NavItem } from "@/lib/nav";
 import { cn } from "@/lib/utils";
+import { BrandLogo } from "@/components/brand-logo";
 const ICONS: Record<string, LucideIcon> = {
   ArrowLeftRight,
   BarChart3,
@@ -64,18 +64,16 @@ export function Sidebar({ nav, appName }: { nav: NavItem[]; appName: string }) {
         collapsed && "!w-[76px]",
       )}
     >
-      <div className={cn("flex h-24 items-center px-5", collapsed && "!px-4")}>
+        <div className={cn("flex h-24 items-center px-4", collapsed && "!px-4")}>
         <Link
           href="/dashboard"
-          className="flex min-w-0 items-center gap-3"
+            className="flex min-w-0 items-center gap-2"
           aria-label={appName}
         >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-white dark:text-bg">
-            <Leaf size={21} strokeWidth={1.6} />
-          </span>
+            <BrandLogo />
           {!collapsed && (
-            <div>
-              <span className="text-[17px] font-extrabold tracking-tight">
+              <div className="min-w-0">
+                <span className="block whitespace-nowrap text-[14px] font-extrabold tracking-tight">
                 {appName}
               </span>
               <p className="mt-0.5 text-[10px] tracking-wide text-muted">

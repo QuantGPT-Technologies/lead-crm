@@ -4,14 +4,18 @@ import { getLookups, getSetting } from "@/lib/data";
 import { emailProviderConfigured } from "@/lib/messaging";
 import type { Activity, Lead, Row } from "@/lib/types";
 import { LeadEditor } from "./lead-editor";
+import { getLeadMeetings } from "@/lib/meeting-data";
+import { env } from "@/lib/env";
+import { one, type SearchParams } from "@/lib/utils";
 
-export default async function LeadPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function LeadPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SearchParams }) {
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
   const { supabase, profile } = await getSession();
 
   const { data: lead } = await supabase.from("leads").select("*").eq("id", id).maybeSingle();
   if (!lead) notFound();
+  const meetingData = await getLeadMeetings(id, one((await searchParams).calendar));
 
   const [lookups, activities, calls, tasks, messages, posts, enrollment, opportunities, newer, older, postUrl] = await Promise.all([
     getLookups(),
@@ -43,6 +47,10 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       nextId={older.data?.id ?? null}
       emailLive={emailProviderConfigured()}
       postConfigured={/^https?:\/\//.test(postUrl)}
+        meetings={meetingData.meetings}
+        meetingConnection={meetingData.connection}
+        meetingTimezone={env.timezone}
+        meetingNow={new Date().toISOString()}
     />
   );
 }

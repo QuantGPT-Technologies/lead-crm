@@ -85,6 +85,7 @@ if (firstRun) {
 await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-002-performance.sql"), "utf8"));
 await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-003-lead-categories.sql"), "utf8"));
 await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-004-separate-sheet-leads.sql"), "utf8"));
+await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-005-lead-meetings.sql"), "utf8"));
 await configureLocalKanban(db, { once: true });
 
 async function seed() {
@@ -307,7 +308,7 @@ const appEnv = {
   APP_SECRET: "local-demo-app-secret-0123456789",
   AUTH_REQUIRE_GLOBAL_LOGIN: "true",
   AUTH_REQUIRE_OTP: "false",
-  NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME || "SUCCESS MENTORIX CRM",
+  NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME || "SUCCESS MENTORIX",
   NEXT_PUBLIC_COMPANY_NAME: process.env.NEXT_PUBLIC_COMPANY_NAME || "SuccessMentorix pvt. ltd",
 };
 const nextBin = path.join(ROOT, "node_modules", "next", "dist", "bin", "next");

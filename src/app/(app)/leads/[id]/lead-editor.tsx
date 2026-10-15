@@ -26,6 +26,7 @@ import {
   User,
   UserCheck,
   Users,
+  Video,
   type LucideIcon,
 } from "lucide-react";
 import { Badge, Button, Card, Empty, Select, btn } from "@/components/ui";
@@ -41,6 +42,8 @@ import {
   type Section,
 } from "../lead-fields";
 import { ActionPanel, type PanelMode } from "./action-panel";
+import { MeetingsPanel } from "./meetings-panel";
+import type { LeadMeeting, MeetingConnection } from "@/lib/meeting-types";
 
 type Tab = "overview" | Section | "rechurn";
 const TABS: [Tab, string][] = [
@@ -57,6 +60,7 @@ const LOWER_TABS = [
   ["info", "Timeline & actions"],
   ["history", "Stage history"],
   ["calls", "Call log"],
+  ["meetings", "Meetings"],
   ["posts", "Integrations"],
 ] as const;
 const RAIL: [PanelMode, string, LucideIcon][] = [
@@ -84,6 +88,11 @@ const ACTIVITY_COLOR: Record<string, string> = {
   enrolled: "#16a34a",
   opportunity: "#a68b64",
   post: "#475569",
+  meeting_scheduled: "#0284c7",
+  meeting_rescheduled: "#7c3aed",
+  meeting_completed: "#16a34a",
+  meeting_no_show: "#d97706",
+  meeting_cancelled: "#64748b",
 };
 
 export interface EditorProps {
@@ -101,13 +110,17 @@ export interface EditorProps {
   nextId: string | null;
   emailLive: boolean;
   postConfigured: boolean;
+  meetings: LeadMeeting[];
+  meetingConnection: MeetingConnection;
+  meetingTimezone: string;
+  meetingNow: string;
 }
 
 export function LeadEditor(p: EditorProps) {
   const { lead, lookups, me } = p;
   const isStaff = me.role !== "agent";
   const [tab, setTab] = useState<Tab>("overview");
-  const [lower, setLower] = useState<(typeof LOWER_TABS)[number][0]>("info");
+  const [lower, setLower] = useState<(typeof LOWER_TABS)[number][0]>(p.meetingConnection.notice ? "meetings" : "info");
   const [feed, setFeed] = useState<
     "activity" | "productivity" | "communication"
   >("activity");
@@ -166,6 +179,12 @@ export function LeadEditor(p: EditorProps) {
           ) : <Badge>{lead.category ? `Category ${lead.category}` : "Uncategorized"}</Badge>}
       </div>
       <div className="flex flex-wrap gap-2" aria-label="Lead actions">
+        <button type="button" aria-pressed={lower === "meetings"} onClick={() => {
+          setLower("meetings");
+          requestAnimationFrame(() => document.getElementById("lead-meetings")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+        }} className={btn(lower === "meetings" ? "primary" : "outline")}>
+          <Video size={15} /> Schedule Google Meet
+        </button>
         {RAIL.filter(([m]) => m !== "assign" || isStaff).map(
           ([m, label, Icon]) => (
             <button
@@ -312,6 +331,8 @@ export function LeadEditor(p: EditorProps) {
           ))}
         </div>
 
+        {lower === "meetings" && <div id="lead-meetings" className="scroll-mt-24"><MeetingsPanel lead={lead} meetings={p.meetings} connection={p.meetingConnection}
+          me={me} timezone={p.meetingTimezone} now={p.meetingNow} /></div>}
         {lower === "info" && (
           <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
             <Card className="p-4">

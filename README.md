@@ -1,4 +1,4 @@
-# SUCCESS MENTORIX CRM
+# SUCCESS MENTORIX
 
 In-house lead management CRM for education sales (single company).
 Built with **Next.js 16 (App Router) + Supabase (Postgres, Auth, Row Level Security)**, with optional **Firebase** push reminders.
@@ -167,6 +167,10 @@ These rules are enforced in the database (Row Level Security in `schema.sql`), n
 | Others | activity log, my profile / change password |
 
 ## Optional integrations
+
+- **Google Calendar + Meet** — schedule directly from a lead, send an invite, join the meeting,
+  reschedule/cancel, refresh RSVPs, and record completed/no-show outcomes with history and reminders.
+  Setup: [Google Meet integration](docs/google-meet-setup.md).
 
 - **Email sending** – set `RESEND_API_KEY` and `EMAIL_FROM` (https://resend.com). Without it, emails are saved to the
   lead's history and opened in the user's own mail app.

@@ -1,7 +1,7 @@
 export const env = {
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
   supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
-  appName: process.env.NEXT_PUBLIC_APP_NAME || "SUCCESS MENTORIX CRM",
+  appName: process.env.NEXT_PUBLIC_APP_NAME || "SUCCESS MENTORIX",
   companyName: process.env.NEXT_PUBLIC_COMPANY_NAME || "SuccessMentorix pvt. ltd",
   timezone: process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Kolkata",
 };
