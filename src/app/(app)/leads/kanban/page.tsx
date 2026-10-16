@@ -111,7 +111,7 @@ export default async function KanbanPage({
               name="owner"
               defaultValue={filters.owner ?? ""}
               options={[
-                { value: "none", label: "Unassigned" },
+                ...(profile.role === "admin" ? [{ value: "none", label: "Unassigned" }] : []),
                 ...lookups.users.map((u) => ({
                   value: u.id,
                   label: u.full_name,

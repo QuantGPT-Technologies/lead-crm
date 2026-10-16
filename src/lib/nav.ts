@@ -27,15 +27,15 @@ export const NAV: NavItem[] = [
     label: "Team operations",
     roles: STAFF,
     children: [
-      { label: "Import leads", href: "/upload", icon: "Upload" },
-      { label: "Distribute leads", href: "/distribute", icon: "Share2" },
+        { label: "Import leads", href: "/upload", icon: "Upload", roles: ["admin"] },
+        { label: "Distribute leads", href: "/distribute", icon: "Share2", roles: ["admin"] },
       { label: "Assignments", href: "/allotment", icon: "ArrowLeftRight" },
     ],
   },
   {
     label: "Insights & outreach",
     children: [
-      { label: "Reports", href: "/reports", icon: "BarChart3" },
+        { label: "Reports", href: "/reports", icon: "BarChart3", roles: STAFF },
       {
         label: "Team performance",
         href: "/reports/agents",
@@ -68,7 +68,8 @@ export function navFor(role: Role): NavItem[] {
   const walk = (items: NavItem[]): NavItem[] =>
     items
       .filter(allowed)
-      .map((i) => (i.children ? { ...i, children: walk(i.children) } : i));
+        .map((i) => (i.children ? { ...i, children: walk(i.children) } : { ...i, label: i.href === "/leads" && role !== "admin" ? role === "agent" ? "My leads" : "Team leads" : i.label }))
+        .filter(i => !i.children || i.children.length > 0);
   return walk(NAV);
 }
 

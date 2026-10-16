@@ -12,7 +12,7 @@ export async function finishPasswordSetup(accessToken: string, refreshToken: str
   if (error || !data.user) return { error: "This link has expired. Ask your administrator for a new password-setup email." };
   try {
     const { data: profile } = await createAdminClient().from("profiles").select("role,is_active").eq("id", data.user.id).maybeSingle();
-    if (!profile?.is_active || !["admin", "manager"].includes(profile.role)) return { error: "This account cannot use password setup." };
+    if (!profile?.is_active || !["admin", "manager", "agent"].includes(profile.role)) return { error: "This account cannot use password setup." };
     const { error: updateError } = await client.auth.updateUser({ password });
     return updateError ? { error: "Could not save the password. Please request a fresh setup email and try again." } : { success: true };
   } finally {

@@ -23,10 +23,12 @@ export function LeadFilterBar({
   lookups,
   current,
   isStaff,
+  isAdmin = false,
 }: {
   lookups: Lookups;
   current: Record<string, string | undefined>;
   isStaff: boolean;
+  isAdmin?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -35,7 +37,7 @@ export function LeadFilterBar({
   const opts = (list: { id: string; name: string }[]) =>
     list.map((x) => ({ value: x.id, label: x.name }));
   const owners = [
-    { value: "none", label: "Unassigned" },
+    ...(isAdmin ? [{ value: "none", label: "Unassigned" }] : []),
     ...lookups.users.map((u) => ({ value: u.id, label: u.full_name })),
   ];
   const courses = lookups.courses.filter(

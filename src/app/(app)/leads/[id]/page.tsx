@@ -23,7 +23,7 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
     supabase.from("call_logs").select("id, direction, outcome, duration_sec, notes, called_at, user:profiles(full_name)").eq("lead_id", id).order("called_at", { ascending: false }).limit(200),
     supabase.from("tasks").select("id, title, due_at, status, completed_at, assignee:profiles!tasks_assigned_to_fkey(full_name)").eq("lead_id", id).order("due_at", { ascending: false }).limit(200),
     supabase.from("messages").select("id, channel, recipient, subject, body, status, error, created_at, sender:profiles(full_name)").eq("lead_id", id).order("created_at", { ascending: false }).limit(200),
-    supabase.from("lead_posts").select("id, target, status, http_status, response, created_at, poster:profiles(full_name)").eq("lead_id", id).order("created_at", { ascending: false }).limit(50),
+    profile.role === "admin" ? supabase.from("lead_posts").select("id, target, status, http_status, response, created_at, poster:profiles(full_name)").eq("lead_id", id).order("created_at", { ascending: false }).limit(50) : Promise.resolve({ data: [] }),
     supabase.from("enrollments").select("*").eq("lead_id", id).maybeSingle(),
     supabase.from("opportunities").select("*").eq("lead_id", id).order("created_at", { ascending: false }),
     supabase.from("leads").select("id").gt("created_at", lead.created_at).order("created_at", { ascending: true }).limit(1).maybeSingle(),

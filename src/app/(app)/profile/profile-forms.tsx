@@ -6,7 +6,7 @@ import { notify, toast } from "@/components/toast";
 import type { Profile } from "@/lib/types";
 import { changePassword, updateProfile } from "../ops-actions";
 
-export function ProfileForms({ profile, phoneLogin = false }: { profile: Profile; phoneLogin?: boolean }) {
+export function ProfileForms({ profile }: { profile: Profile }) {
   const [pending, start] = useTransition();
 
   return (
@@ -36,8 +36,7 @@ export function ProfileForms({ profile, phoneLogin = false }: { profile: Profile
             <input name="full_name" required defaultValue={profile.full_name} className="input" />
           </Field>
           <Field label="Phone">
-            <input name="phone" type="tel" readOnly={phoneLogin} defaultValue={profile.phone ?? ""} className="input" />
-            {phoneLogin && <p className="mt-1 text-xs text-muted">Ask an admin to change your registered mobile number.</p>}
+            <input name="phone" type="tel" defaultValue={profile.phone ?? ""} className="input" />
           </Field>
           <Button type="submit" disabled={pending}>
             Save
@@ -45,7 +44,7 @@ export function ProfileForms({ profile, phoneLogin = false }: { profile: Profile
         </form>
       </Card>
 
-      {phoneLogin ? <Card className="self-start p-4"><h2 className="font-extrabold">SMS sign-in</h2><p className="mt-2 text-sm text-muted">Your registered mobile number receives a one-time code when you sign in. No password is needed.</p></Card> : <Card className="self-start p-4">
+      <Card className="self-start p-4">
         <h2 className="mb-3 text-base font-extrabold">Change password</h2>
         <form
           className="space-y-3"
@@ -73,7 +72,7 @@ export function ProfileForms({ profile, phoneLogin = false }: { profile: Profile
             Change password
           </Button>
         </form>
-      </Card>}
+      </Card>
     </div>
   );
 }

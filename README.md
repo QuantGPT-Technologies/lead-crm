@@ -142,8 +142,8 @@ After the first login, change both passwords: **Configuration → Settings** (gl
 | Role | Sees | Can do |
 | --- | --- | --- |
 | Agent | only leads they own | work leads, log calls, follow-ups, messages, enrol |
-| Manager | own leads, their team's leads (users whose "Reports to" is them), unassigned leads | + upload, distribute, allot, rechurn, agent report |
-| Admin | everything | + users, masters, templates, settings, delete leads |
+| Manager | own leads and direct team leads | + team assignments, rechurn and team reports |
+| Admin | everything | + users, imports, unassigned pool, distribution, masters, templates, settings, delete leads |
 
 These rules are enforced in the database (Row Level Security in `schema.sql`), not just hidden in the UI.
 
@@ -201,15 +201,18 @@ top of `src/app/globals.css`. The sidebar logo is in `src/components/sidebar.tsx
 
 ## Production staff sign-in
 
-Admins and managers use email/User ID and password. Sales agents use **Sales agent → registered mobile number → SMS OTP** once Firebase mode is enabled. Admins register each agent in Configuration → Users; active agents must have distinct mobile numbers. Agents cannot change their own login number. Firebase users without a matching active CRM agent receive no CRM access.
+All roles (admins, managers and sales agents) sign in with email and password. SMS login has been removed. Set AUTH_REQUIRE_GLOBAL_LOGIN=false and AUTH_REQUIRE_OTP=false for direct email/password sign-in.
 
-1. Apply `supabase/upgrade-006-firebase-agent-login.sql`. It installs the private session proof tables and starts in `password` mode, preserving access during setup.
-2. Set the five `NEXT_PUBLIC_FIREBASE_*` web configuration fields (API key, auth domain, project ID, sender ID, app ID) in local and production environments. Set `AUTH_REQUIRE_GLOBAL_LOGIN=false`. SMS login needs neither a service-account private key nor a VAPID key. Push notifications have separate requirements.
-3. Enable Firebase Authentication's Phone provider. Authorize `lead-crm-orpin-ten.vercel.app` and any other actual login domains, configure billing and the India SMS region policy. Firebase's reCAPTCHA must be allowed by the browser.
-4. Deploy, then run `node scripts/enable-agent-otp.mjs` for readiness checks. After confirming Phone/SMS setup, run `node scripts/enable-agent-otp.mjs --activate --phone-provider-ready`. This switches the database setting to `firebase`; existing agent password sessions lose CRM access immediately.
+Admins create agents in Configuration ? Users with an email and initial password. A mobile number is optional contact information. Admins can reset any user's password using the key button. Existing users can enter their email on the login page and select **Set or reset your password** to receive a setup link. Recovery links work for every active role.
 
-The server verifies Google signatures, project/issuer/expiry, recent phone authentication and live Firebase account status through the end-user account lookup API. It consumes each verification once and records a private proof for the resulting Supabase session. RLS checks that proof, registered number and expiry; browser password authentication alone cannot bypass it. CRM proof expires after 12 hours. Firebase disables/revocations are checked at sign-in; deactivate a CRM user to stop existing CRM access immediately.
+For an existing database, set app_settings.agent_auth_mode to the JSON string "password" to turn off the former Firebase proof requirement. The production setting has been updated. Apply supabase/upgrade-007-email-login.sql for SQL cleanup of the old phone uniqueness trigger and role function. This preserves users, leads and activity. Earlier migrations remain as installation history.
 
-The requested production admins are `director@successmentorix.com` and `founder@successmentorix.com`. `node scripts/setup-production-logins.mjs` provisions them with random undisclosed initial passwords and deactivates the three explicitly approved test accounts. It preserves existing leads and other users. To send password setup emails after deployment, use `node scripts/setup-production-logins.mjs --send-setup`. Supabase must have a working mail sender; its recovery template must include the confirmation link. Set its Site URL to `https://lead-crm-orpin-ten.vercel.app` and allow `https://lead-crm-orpin-ten.vercel.app/login/password-setup` in Redirect URLs. Setup links never appear in script output.
+Firebase web configuration and service-account settings are only used by optional push reminders; email login does not use Firebase or SMS billing. Supabase needs a working mail sender for password setup emails. Set its Site URL to https://lead-crm-orpin-ten.vercel.app and allow https://lead-crm-orpin-ten.vercel.app/login/password-setup in Redirect URLs.
 
-Validation: `node scripts/verify-agent-login.mjs` runs local PostgreSQL authorization checks with rollback fixtures; `node scripts/verify-firebase-token.mjs` checks keyless initialization and account validation without sending SMS. A real SMS login still requires a registered agent's phone and enabled Firebase delivery.
+The two requested production admins are director@successmentorix.com and founder@successmentorix.com. The setup-production-logins script remains available for initial admin provisioning and explicitly sending admin setup emails with --send-setup.
+
+## Team access
+
+Apply supabase/upgrade-008-team-access.sql to existing databases. Admins manage team member login emails, roles and reporting managers from Configuration ? Team members. Editing a login email updates both Supabase Auth and the CRM profile; failures restore the prior auth email when possible. Agents see their own assigned work. Managers see their own work and active direct reports, with team-only user choices and assignment targets. Admins alone can see the unassigned pool, import/distribute leads, manage configuration and use external lead-post integrations. These rules apply to direct database reads as well as the UI; reports, dashboard counts and lead history follow the same lead policies.
+
+Run node scripts/verify-team-access.mjs for local PostgreSQL scope tests with rollback fixtures.

@@ -6,7 +6,7 @@ import { fmtDateTime } from "@/lib/utils";
 import { Uploader } from "./uploader";
 
 export default async function UploadPage() {
-  const { supabase } = await requireRole("admin", "manager");
+  const { supabase } = await requireRole("admin");
   const lookups = await getLookups();
   const { data: batches } = await supabase
     .from("upload_batches")

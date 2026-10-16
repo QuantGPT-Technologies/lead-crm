@@ -306,13 +306,13 @@ export function LeadEditor(p: EditorProps) {
             )}
 
             {tab === "rechurn" && (
-              <RechurnForm lead={lead} lookups={lookups} isStaff={isStaff} />
+              <RechurnForm lead={lead} lookups={lookups} isStaff={isStaff} isAdmin={me.role === "admin"} />
             )}
           </div>
         </Card>
 
         <div className="flex flex-wrap gap-1" role="group">
-          {LOWER_TABS.map(([key, label]) => (
+          {LOWER_TABS.filter(([key]) => key !== "posts" || me.role === "admin").map(([key, label]) => (
             <button
               key={key}
               type="button"
@@ -689,10 +689,12 @@ function RechurnForm({
   lead,
   lookups,
   isStaff,
+  isAdmin,
 }: {
   lead: Lead;
   lookups: Lookups;
   isStaff: boolean;
+  isAdmin: boolean;
 }) {
   const [reason, setReason] = useState("");
   const [owner, setOwner] = useState(lead.owner_id ?? "");
@@ -737,7 +739,8 @@ function RechurnForm({
                 value: u.id,
                 label: u.full_name,
               }))}
-              placeholder="Unassigned pool"
+              required={!isAdmin}
+              placeholder={isAdmin ? "Unassigned pool" : null}
             />
           </label>
           <Button type="submit" variant="danger" disabled={pending}>

@@ -34,7 +34,8 @@ export default async function DashboardPage({
   const { supabase, profile } = await getSession();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error("Your session expired. Please sign in again.");
-  const reports = createDashboardClient(session.access_token);
+  // Team membership and assignments can change while a JWT remains valid.
+  const reports = profile.role === "admin" ? createDashboardClient(session.access_token) : supabase;
   const days = RANGES.includes(Number(one(sp.days)))
     ? Number(one(sp.days))
     : 30;

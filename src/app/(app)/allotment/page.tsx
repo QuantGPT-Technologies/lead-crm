@@ -8,7 +8,7 @@ interface Summary {
 }
 
 export default async function AllotmentPage() {
-  const { supabase } = await requireRole("admin", "manager");
+  const { supabase, profile } = await requireRole("admin", "manager");
   const [{ data }, { count: unassigned }] = await Promise.all([
     supabase.rpc("allotment_summary"),
     supabase.from("leads").select("id", { count: "exact", head: true }).is("owner_id", null),
@@ -18,12 +18,12 @@ export default async function AllotmentPage() {
   return (
     <>
       <PageHeader title="Data Allotment">
-        <Link href="/leads?owner=none" className="font-bold text-brand">
+        {profile.role === "admin" && <Link href="/leads?owner=none" className="font-bold text-brand">
           {unassigned ?? 0} unassigned lead(s)
-        </Link>
+        </Link>}
       </PageHeader>
 
-      <TransferForm users={rows.map((r) => ({ id: r.agent_id, name: `${r.agent} (${r.total})` }))} />
+      <TransferForm allowUnassigned={profile.role === "admin"} users={rows.map((r) => ({ id: r.agent_id, name: `${r.agent} (${r.total})` }))} />
 
       <Card className="mt-4 overflow-x-auto">
         <table className="table-grid w-full border-collapse">

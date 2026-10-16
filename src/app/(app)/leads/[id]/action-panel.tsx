@@ -204,7 +204,8 @@ function PanelBody({
               value: u.id,
               label: `${u.full_name} (${u.emp_code})`,
             }))}
-            placeholder="Unassigned pool"
+            required={me.role !== "admin"}
+            placeholder={me.role === "admin" ? "Unassigned pool" : null}
           />
         </Field>
         {save("Assign")}

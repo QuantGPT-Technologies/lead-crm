@@ -9,13 +9,21 @@ import { cleanSearch, isDateString, todayBounds, startOfDay, addDays } from "@/l
 let batchUnavailableUntil = 0;
 /** Dropdown reads are cached for 60 seconds per verified session; edits invalidate the cache. */
 export const getLookups = cache(async (): Promise<Lookups> => {
-  const { supabase } = await getSession();
+    const { supabase, profile } = await getSession();
+    // Scope dropdowns even while an older database is waiting for the RLS migration.
+    const members = profile.role === "admin" ? null : profile.role === "manager"
+      ? await createAdminClient().from("profiles").select("id").eq("manager_id", profile.id).eq("is_active", true)
+      : null;
+    if (members?.error) throw new Error("Could not load your team");
+    const allowed = profile.role === "admin" ? null : new Set([profile.id, ...(members?.data ?? []).map(p => p.id as string)]);
+    const scopedUsers = (users: Lookups["users"]) => allowed ? users.filter(user => allowed.has(user.id)) : users;
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error("Your session expired. Please sign in again.");
   const lookupClient = createLookupClient(session.access_token);
   const batched = Date.now() < batchUnavailableUntil ? null : await lookupClient.rpc("crm_lookups", undefined, { get: true });
   if (batched && !batched.error && batched.data) {
     const lookups = batched.data as Lookups;
+      lookups.users = scopedUsers(lookups.users);
     const position = new Map(lookups.funnels.map((f, i) => [f.id, i]));
     lookups.stages.sort((a, b) => (position.get(a.funnel_id) ?? 0) - (position.get(b.funnel_id) ?? 0) || a.sort_order - b.sort_order);
     return lookups;
@@ -45,7 +53,7 @@ export const getLookups = cache(async (): Promise<Lookups> => {
   // order stages by their funnel first, then their own position
   const funnelPos = new Map(funnels.map((f, i) => [f.id, i]));
   stages.sort((a, b) => (funnelPos.get(a.funnel_id) ?? 0) - (funnelPos.get(b.funnel_id) ?? 0) || a.sort_order - b.sort_order);
-  return { sources, universities, courses, funnels, stages, subStages, users, templates };
+    return { sources, universities, courses, funnels, stages, subStages, users: scopedUsers(users), templates };
 });
 
 export interface LeadFilters {

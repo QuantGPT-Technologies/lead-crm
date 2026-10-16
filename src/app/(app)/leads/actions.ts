@@ -90,7 +90,7 @@ async function canOpenLead(userId: string, ownerId: string | null) {
   if (!user?.is_active) return false;
   if (user.role === "admin" || userId === ownerId) return true;
   if (user.role !== "manager") return false;
-  if (!ownerId) return true;
+    if (!ownerId) return false;
   const { data: owner } = await admin.from("profiles").select("manager_id").eq("id", ownerId).maybeSingle();
   return owner?.manager_id === userId;
 }
@@ -132,6 +132,7 @@ export async function createLead(values: Values): Promise<ActionResult> {
   if (problem) return { error: problem };
 
   if (!isStaff(profile.role)) row.owner_id = profile.id; // agents always own the leads they add
+  if (profile.role === "manager") row.owner_id ??= profile.id;
   row.stage_id ??= lk.stages[0]?.id ?? null;
   const badRef = refProblem(row, lk);
   if (badRef) return { error: badRef };
@@ -143,8 +144,7 @@ export async function createLead(values: Values): Promise<ActionResult> {
   if (row.owner_id) row.allotted_at = new Date().toISOString();
   row.created_by = profile.id;
 
-  // Staff may add a lead for any active user, the same as when they assign one, so their insert
-  // uses the service role; an agent's insert stays under row level security.
+  // Active recipient choices have already been scoped to the admin's directory or manager's team.
   const db = isStaff(profile.role) ? createAdminClient() : supabase;
   const { data, error } = await db.from("leads").insert(row).select("id, student_name").single();
   if (error) return { error: dbError(error) };
@@ -196,6 +196,7 @@ export async function updateLead(id: string, section: LeadSection, values: Value
   if (!Object.keys(patch).length) return { message: "No changes to save" };
   const badRef = refProblem(patch, lk); // only what actually changed, so a lead keeping a since-retired value still saves
   if (badRef) return { error: badRef };
+    if ("owner_id" in patch && profile.role === "manager" && !patch.owner_id) return { error: "Only admins can move leads to the unassigned pool" };
   if ("owner_id" in patch) patch.allotted_at = patch.owner_id ? new Date().toISOString() : null;
 
   // An owner change can move the lead out of a manager's view, which RLS would reject; the
@@ -247,13 +248,13 @@ export async function moveStage(id: string, stageId: string): Promise<ActionResu
 export async function assignLeads(ids: string[], ownerId: string | null): Promise<ActionResult> {
   const { supabase, profile } = await getSession();
   if (!isStaff(profile.role)) return { error: "Only managers and admins can assign leads" };
+  if (profile.role === "manager" && !ownerId) return { error: "Only admins can move leads to the unassigned pool" };
   const parsed = idList.safeParse(ids);
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   const lk = await getLookups();
   if (ownerId && !lk.users.some((u) => u.id === ownerId)) return { error: "Unknown user" };
 
-  // Only leads the caller can see are touched; the write itself uses the service role because
-  // the new owner may be outside the caller's team (the row would fail RLS on the way back).
+  // Both the source read and recipient choice are checked before the service-role write.
   const admin = createAdminClient();
   const allotted_at = ownerId ? new Date().toISOString() : null;
   const assigned: string[] = [];
@@ -316,6 +317,7 @@ export async function moveCategory(ids: string[], category: string | null): Prom
 export async function rechurnLead(id: string, reason: string, ownerId: string | null): Promise<ActionResult> {
   const { supabase, profile } = await getSession();
   if (!isStaff(profile.role)) return { error: "Only managers and admins can rechurn leads" };
+  if (profile.role === "manager" && !ownerId) return { error: "Choose someone in your team to receive this lead" };
   if (reason.trim().length < 3) return { error: "Give a reason for rechurning" };
   const lk = await getLookups();
   const first = lk.stages[0];
@@ -615,6 +617,7 @@ export async function saveOpportunity(
 /** Sends the lead to the external URL set in Configuration → Settings (e.g. a university's lead API). */
 export async function postLead(leadId: string): Promise<ActionResult> {
   const { supabase, profile } = await getSession();
+  if (profile.role !== "admin") return { error: "Only admins can post leads to external integrations" };
   const url = await getSetting<string>(supabase, "lead_post_webhook", "");
   if (!/^https?:\/\//.test(url)) return { error: "No Lead Post URL is configured. An admin can set it in Configuration → Settings." };
   const { data: lead } = await supabase

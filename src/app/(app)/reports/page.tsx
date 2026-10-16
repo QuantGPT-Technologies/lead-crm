@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Download } from "lucide-react";
-import { getSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { Card, Empty, PageHeader, btn } from "@/components/ui";
 import { dateRange, one, toCsv, type SearchParams } from "@/lib/utils";
 
@@ -12,7 +12,7 @@ interface ReportRow {
 
 export default async function ReportsPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
-  const { supabase } = await getSession();
+  const { supabase } = await requireRole("admin", "manager");
   const dim = DIMENSIONS.some(([d]) => d === one(sp.by)) ? one(sp.by)! : "stage";
   const range = dateRange(one(sp.from), one(sp.to), 30);
 

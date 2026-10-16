@@ -6,7 +6,7 @@ import { DistributeForm } from "./distribute-form";
 
 export default async function DistributePage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
-  const { supabase } = await requireRole("admin", "manager");
+  const { supabase } = await requireRole("admin");
   const lookups = await getLookups();
 
   const pool = supabase.from("leads").select("id", { count: "exact", head: true }).is("owner_id", null);

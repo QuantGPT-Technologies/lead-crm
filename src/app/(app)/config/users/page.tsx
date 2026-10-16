@@ -3,7 +3,6 @@ import { PageHeader } from "@/components/ui";
 import { createAdminClient } from "@/lib/supabase/server";
 import type { Profile } from "@/lib/types";
 import { UsersTable } from "./users-table";
-import { agentFirebaseRequired } from "@/lib/agent-auth";
 
 export default async function UsersPage() {
   const { profile } = await requireRole("admin");
@@ -11,8 +10,8 @@ export default async function UsersPage() {
   const { data } = await createAdminClient().from("profiles").select("*").order("created_at");
   return (
     <>
-      <PageHeader title="Users" />
-      <UsersTable users={(data ?? []) as Profile[]} selfId={profile.id} agentOtp={await agentFirebaseRequired()} />
+      <PageHeader title="Team members" />
+      <UsersTable users={(data ?? []) as Profile[]} selfId={profile.id} />
     </>
   );
 }

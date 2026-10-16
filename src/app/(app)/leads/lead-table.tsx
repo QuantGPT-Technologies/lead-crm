@@ -201,7 +201,7 @@ export function LeadTable({
             {isStaff && (
               <Select
                 aria-label="Assign selected leads"
-                options={[{ value: "none", label: "Unassign" }, ...users]}
+                options={[...(role === "admin" ? [{ value: "none", label: "Unassign" }] : []), ...users]}
                 placeholder="Assign to..."
                 value=""
                 disabled={pending}

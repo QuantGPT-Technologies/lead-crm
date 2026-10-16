@@ -47,7 +47,6 @@ if (process.argv.includes('--send-setup')) {
   writeFileSync(`.migration/deactivated-test-agents-${Date.now()}.json`, JSON.stringify(profiles, null, 2));
   for (const profile of profiles) {
     check(await admin.from('profiles').update({ is_active: false }).eq('id', profile.id));
-    check(await admin.from('firebase_agent_sessions').delete().eq('user_id', profile.id));
     check(await admin.auth.admin.updateUserById(profile.id, { ban_duration: '876000h' }));
     console.log(`${profile.email}: deactivated`);
   }

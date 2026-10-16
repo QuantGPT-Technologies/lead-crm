@@ -12,7 +12,7 @@ import {
   User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { globalLogin, resetLogin, userLogin, verifyOtp } from "./actions";
+import { globalLogin, requestPasswordSetup, resetLogin, userLogin, verifyOtp } from "./actions";
 
 type Step = "global" | "user" | "otp";
 
@@ -23,7 +23,7 @@ const TITLES: Record<Step, [string, string]> = {
   ],
   user: [
     "Make yourself at home.",
-    "Sign in with your user ID or email to get started.",
+    "Sign in with your email and password to get started.",
   ],
   otp: ["One last step.", "Enter the verification code we sent to your email."],
 };
@@ -46,6 +46,7 @@ export function LoginFlow({
   const [name, setName] = useState("");
   const [show, setShow] = useState(false);
   const [pending, start] = useTransition();
+  const [recoveryNotice, setRecoveryNotice] = useState("");
 
   const steps = [
     ...(useGlobal
@@ -151,9 +152,10 @@ export function LoginFlow({
         {step === "user" && (
           <LoginInput
             icon={User}
-            label="User ID"
+            label="Email"
             name="userId"
-            placeholder="EA00000001 or your email"
+            type="email"
+            placeholder="you@example.com"
             autoComplete="username"
             autoFocus
           />
@@ -209,6 +211,18 @@ export function LoginFlow({
               ? "Verify and continue"
               : "Continue to workspace →"}
         </button>
+        {step === "user" && <button type="button" disabled={pending} className="text-sm font-semibold text-brand underline underline-offset-4" onClick={event => {
+          const form = event.currentTarget.form;
+          if (!form) return;
+          const email = String(new FormData(form).get("userId") ?? "");
+          setError(""); setRecoveryNotice("");
+          start(async () => {
+            const result = await requestPasswordSetup(email);
+            if (result.error) setError(result.error);
+            else setRecoveryNotice(result.message ?? "Check your email for a password setup link.");
+          });
+        }}>Set or reset your password</button>}
+        {recoveryNotice && <p role="status" className="text-sm text-muted">{recoveryNotice}</p>}
       </form>
 
       {step !== steps[0].key && (

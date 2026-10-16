@@ -9,14 +9,14 @@ import { createUser, resetUserPassword, updateUser } from "../../ops-actions";
 
 const ROLES = [
   { value: "agent", label: "Agent - sees only their own leads" },
-  { value: "manager", label: "Manager - sees their team's and unassigned leads" },
+  { value: "manager", label: "Manager - sees their own and their team's leads" },
   { value: "admin", label: "Admin - sees everything, manages configuration" },
 ];
 const ROLE_COLOR: Record<string, string> = { admin: "#c026d3", manager: "#0284c7", agent: "#64748b" };
 
 type Dialog = { kind: "new" } | { kind: "edit"; user: Profile } | { kind: "password"; user: Profile };
 
-export function UsersTable({ users, selfId, agentOtp = false }: { users: Profile[]; selfId: string; agentOtp?: boolean }) {
+export function UsersTable({ users, selfId }: { users: Profile[]; selfId: string }) {
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [selectedRole, setSelectedRole] = useState("agent");
   const [pending, start] = useTransition();
@@ -33,7 +33,7 @@ export function UsersTable({ users, selfId, agentOtp = false }: { users: Profile
         dialog.kind === "new"
           ? await createUser({ full_name: s("full_name"), email: s("email"), password: s("password"), role: s("role"), manager_id: s("manager_id"), phone: s("phone") })
           : dialog.kind === "edit"
-            ? await updateUser(dialog.user.id, { full_name: s("full_name"), role: s("role"), manager_id: s("manager_id"), phone: s("phone"), is_active: f.get("is_active") === "on" })
+              ? await updateUser(dialog.user.id, { full_name: s("full_name"), email: s("email"), role: s("role"), manager_id: s("manager_id"), phone: s("phone"), is_active: f.get("is_active") === "on" })
             : await resetUserPassword(dialog.user.id, s("password"));
       if (notify(res)) setDialog(null);
     });
@@ -46,7 +46,7 @@ export function UsersTable({ users, selfId, agentOtp = false }: { users: Profile
       <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <p className="text-muted">{users.filter((u) => u.is_active).length} active user(s)</p>
           <Button onClick={() => { setSelectedRole("agent"); setDialog({ kind: "new" }); }}>
-          <Plus size={15} /> Add user
+          <Plus size={15} /> Add team member
         </Button>
       </div>
       <div className="overflow-x-auto">
@@ -72,9 +72,9 @@ export function UsersTable({ users, selfId, agentOtp = false }: { users: Profile
                     <Button variant="ghost" className="h-8" aria-label={`Edit ${u.full_name}`} onClick={() => { setSelectedRole(u.role); setDialog({ kind: "edit", user: u }); }}>
                     <Pencil size={14} />
                   </Button>
-                    {!(agentOtp && u.role === "agent") && <Button variant="ghost" className="h-8" aria-label={`Reset password of ${u.full_name}`} onClick={() => setDialog({ kind: "password", user: u })}>
+                    <Button variant="ghost" className="h-8" aria-label={`Reset password of ${u.full_name}`} onClick={() => setDialog({ kind: "password", user: u })}>
                     <KeyRound size={14} />
-                    </Button>}
+                    </Button>
                 </td>
               </tr>
             ))}
@@ -83,20 +83,18 @@ export function UsersTable({ users, selfId, agentOtp = false }: { users: Profile
       </div>
 
       {dialog && (
-        <Modal title={dialog.kind === "new" ? "Add user" : dialog.kind === "edit" ? `Edit ${dialog.user.full_name}` : `Reset password - ${dialog.user.full_name}`} onClose={() => setDialog(null)}>
+          <Modal title={dialog.kind === "new" ? "Add team member" : dialog.kind === "edit" ? `Edit ${dialog.user.full_name}` : `Reset password - ${dialog.user.full_name}`} onClose={() => setDialog(null)}>
           <form className="space-y-3" onSubmit={submit}>
             {dialog.kind !== "password" && (
               <>
                 <Field label="Full name" required>
                   <input name="full_name" required defaultValue={editing?.full_name} className="input" />
                 </Field>
-                {dialog.kind === "new" && (
-                    <Field label="Email" required>
-                    <input name="email" type="email" required autoComplete="off" className="input" />
+                    <Field label="Login email" required>
+                    <input name="email" type="email" required defaultValue={editing?.email ?? ""} autoComplete="off" className="input" />
                   </Field>
-                )}
-                  <Field label={agentOtp && selectedRole === "agent" ? "Registered mobile number (SMS login)" : "Phone"} required={agentOtp && selectedRole === "agent"}>
-                    <input name="phone" type="tel" required={agentOtp && selectedRole === "agent"} defaultValue={editing?.phone ?? ""} className="input" />
+                  <Field label="Phone">
+                    <input name="phone" type="tel" defaultValue={editing?.phone ?? ""} className="input" />
                 </Field>
                 <Field label="Role" required>
                     <Select name="role" required value={selectedRole} onChange={e => setSelectedRole(e.target.value)} options={ROLES} placeholder={null} />
@@ -112,12 +110,12 @@ export function UsersTable({ users, selfId, agentOtp = false }: { users: Profile
                 )}
               </>
             )}
-              {dialog.kind !== "edit" && !(dialog.kind === "new" && agentOtp && selectedRole === "agent") && (
+              {dialog.kind !== "edit" && (
               <Field label={dialog.kind === "new" ? "Initial password" : "New password"} required>
                 <input name="password" type="text" required minLength={8} autoComplete="new-password" placeholder="At least 8 characters, letters and numbers" className="input" />
               </Field>
             )}
-              {dialog.kind === "new" && <p className="text-xs text-muted">{agentOtp && selectedRole === "agent" ? "The agent will sign in with an SMS code sent to this mobile number. Every active agent must have a different number." : "The User ID is generated automatically. Share it with the user along with the password."}</p>}
+              {dialog.kind === "new" && <p className="text-xs text-muted">Share the email address and initial password with the user. They can change their password under My Profile.</p>}
             <div className="flex gap-2 pt-2">
               <Button type="submit" disabled={pending}>
                 {pending ? "Saving..." : "Save"}

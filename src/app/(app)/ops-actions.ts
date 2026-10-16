@@ -7,8 +7,6 @@ import { MASTERS, type MasterTable } from "@/lib/masters";
 import { createAdminClient, createStatelessClient } from "@/lib/supabase/server";
 import type { ActionResult, Role } from "@/lib/types";
 import { isValidEmail, isValidMobile, normalizeMobile } from "@/lib/utils";
-import { randomBytes } from "node:crypto";
-import { agentFirebaseRequired } from "@/lib/agent-auth";
 import { toE164Phone } from "@/lib/phone";
 
 const done = <T extends ActionResult>(res: T) => {
@@ -50,7 +48,7 @@ export interface UploadResult extends ActionResult {
 /** Imports each valid CSV row as an independent unassigned lead. */
 export async function uploadLeads(fileName: string, rows: Record<string, string>[], defaultSourceId: string): Promise<UploadResult> {
   const { supabase, profile } = await getSession();
-  if (!isStaff(profile.role)) return { error: "Only managers and admins can upload leads" };
+  if (profile.role !== "admin") return { error: "Only admins can upload leads" };
   if (!Array.isArray(rows) || rows.length === 0) return { error: "The file has no data rows" };
   if (rows.length > 5000) return { error: "Upload at most 5000 rows per file" };
 
@@ -162,7 +160,7 @@ async function setOwner(ids: string[], ownerId: string | null, actor: { id: stri
 
 export async function distributeLeads(v: { agentIds: string[]; count: number; source?: string; batch?: string; stage?: string }): Promise<ActionResult> {
   const { profile } = await getSession();
-  if (!isStaff(profile.role)) return { error: "Only managers and admins can distribute leads" };
+  if (profile.role !== "admin") return { error: "Only admins can distribute leads" };
   const lk = await getLookups();
   const agents = lk.users.filter((u) => v.agentIds?.includes(u.id));
   if (!agents.length) return { error: "Choose at least one user to receive leads" };
@@ -188,6 +186,7 @@ export async function distributeLeads(v: { agentIds: string[]; count: number; so
 export async function transferLeads(v: { from: string; to: string; count: number; untouchedOnly: boolean }): Promise<ActionResult> {
   const { profile } = await getSession();
   if (!isStaff(profile.role)) return { error: "Only managers and admins can move leads" };
+  if (profile.role === "manager" && v.to === "none") return { error: "Only admins can move leads to the unassigned pool" };
   const lk = await getLookups();
   const from = lk.users.find((u) => u.id === v.from);
   const to = v.to === "none" ? null : lk.users.find((u) => u.id === v.to);
@@ -298,16 +297,14 @@ export async function createUser(v: { full_name: string; email: string; password
   if (!v.full_name?.trim()) return { error: "Name is required" };
   if (!isValidEmail(email)) return { error: "Enter a valid email" };
   if (!ROLES.includes(v.role as Role)) return { error: "Choose a role" };
-  const phoneLogin = v.role === "agent" && await agentFirebaseRequired();
   const phone = toE164Phone(v.phone ?? "");
-  if (phoneLogin && !phone) return { error: "A valid registered mobile number is required for sales agents" };
-  const weak = phoneLogin ? null : passwordProblem(v.password ?? "");
+  const weak = passwordProblem(v.password ?? "");
   if (weak) return { error: weak };
   const badManager = await managerProblem(v.manager_id, null);
   if (badManager) return { error: badManager };
 
   const admin = createAdminClient();
-  const { data, error } = await admin.auth.admin.createUser({ email, password: phoneLogin ? randomBytes(32).toString("base64url") : v.password, email_confirm: true });
+  const { data, error } = await admin.auth.admin.createUser({ email, password: v.password, email_confirm: true });
   if (error) return { error: error.message };
 
   const { data: row, error: pErr } = await admin
@@ -322,27 +319,38 @@ export async function createUser(v: { full_name: string; email: string; password
   return done({ message: `User created. User ID: ${row.emp_code}` });
 }
 
-export async function updateUser(id: string, v: { full_name: string; role: string; manager_id?: string; phone?: string; is_active: boolean }): Promise<ActionResult> {
+export async function updateUser(id: string, v: { full_name: string; email: string; role: string; manager_id?: string; phone?: string; is_active: boolean }): Promise<ActionResult> {
   const { profile } = await getSession();
   if (profile.role !== "admin") return { error: "Only admins can edit users" };
   if (!v.full_name?.trim()) return { error: "Name is required" };
   if (!ROLES.includes(v.role as Role)) return { error: "Choose a role" };
   if (id === profile.id && (v.role !== "admin" || !v.is_active)) return { error: "You cannot remove your own admin access" };
   if (!UUID.test(String(id))) return { error: "User not found" };
-  if (v.role === "agent" && v.is_active && await agentFirebaseRequired() && !toE164Phone(v.phone ?? "")) return { error: "A valid registered mobile number is required for sales agents" };
+  const email = v.email?.trim().toLowerCase();
+  if (!isValidEmail(email)) return { error: "Enter a valid login email" };
   const badManager = await managerProblem(v.manager_id, id);
   if (badManager) return { error: badManager };
 
   const admin = createAdminClient();
+  const { data: previous, error: previousError } = await admin.from("profiles").select("email").eq("id", id).maybeSingle();
+  if (previousError || !previous) return { error: "User not found" };
+  const changedEmail = email !== previous.email.toLowerCase();
+  if (changedEmail) {
+    const { error } = await admin.auth.admin.updateUserById(id, { email, email_confirm: true });
+    if (error) return { error: error.message };
+  }
   const { data: saved, error } = await admin
     .from("profiles")
-    .update({ full_name: v.full_name.trim(), role: v.role, manager_id: v.manager_id || null, phone: v.phone?.trim() || null, is_active: !!v.is_active })
+    .update({ full_name: v.full_name.trim(), email, role: v.role, manager_id: v.manager_id || null, phone: v.phone?.trim() || null, is_active: !!v.is_active })
     .eq("id", id)
     .select("id");
-  if (error) return { error: msg(error) };
-  if (!saved?.length) return { error: "User not found" };
-  // Editing registration details requires a fresh phone verification.
-  await admin.from("firebase_agent_sessions").delete().eq("user_id", id);
+  if (error || !saved?.length) {
+    if (changedEmail) {
+      const { error: rollbackError } = await admin.auth.admin.updateUserById(id, { email: previous.email, email_confirm: true });
+      if (rollbackError) return { error: "Could not finish the email change. Check this user's email in Supabase Authentication before retrying." };
+    }
+    return { error: error ? msg(error) : "User not found" };
+  }
   // block / unblock the login itself so a deactivated user's existing session stops refreshing
   await admin.auth.admin.updateUserById(id, { ban_duration: v.is_active ? "none" : "876000h" });
   return done({ message: "User updated" });
@@ -351,8 +359,6 @@ export async function updateUser(id: string, v: { full_name: string; role: strin
 export async function resetUserPassword(id: string, password: string): Promise<ActionResult> {
   const { profile } = await getSession();
   if (profile.role !== "admin") return { error: "Only admins can reset passwords" };
-  const { data: target } = await createAdminClient().from("profiles").select("role").eq("id", id).maybeSingle();
-  if (target?.role === "agent" && await agentFirebaseRequired()) return { error: "Sales agents sign in with SMS OTP and do not need a password" };
   const weak = passwordProblem(password ?? "");
   if (weak) return { error: weak };
   const { error } = await createAdminClient().auth.admin.updateUserById(id, { password });
@@ -387,15 +393,12 @@ export async function setGlobalLogin(email: string, password: string): Promise<A
 export async function updateProfile(v: { full_name: string; phone: string }): Promise<ActionResult> {
   const { profile } = await getSession();
   if (!v.full_name?.trim()) return { error: "Name is required" };
-  const phoneLogin = profile.role === "agent" && await agentFirebaseRequired();
-  if (phoneLogin && toE164Phone(v.phone) !== toE164Phone(profile.phone)) return { error: "Ask an admin to change your registered mobile number" };
-  const { error } = await createAdminClient().from("profiles").update({ full_name: v.full_name.trim(), ...(phoneLogin ? {} : { phone: v.phone?.trim() || null }) }).eq("id", profile.id);
+  const { error } = await createAdminClient().from("profiles").update({ full_name: v.full_name.trim(), phone: v.phone?.trim() || null }).eq("id", profile.id);
   return error ? { error: msg(error) } : done({ message: "Profile updated" });
 }
 
 export async function changePassword(current: string, next: string): Promise<ActionResult> {
   const { supabase, profile } = await getSession();
-  if (profile.role === "agent" && await agentFirebaseRequired()) return { error: "Sales agents sign in with SMS OTP" };
   const weak = passwordProblem(next ?? "");
   if (weak) return { error: weak };
   if (current === next) return { error: "New password must be different from the current one" };

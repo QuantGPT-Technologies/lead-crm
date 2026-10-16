@@ -159,6 +159,7 @@ export default async function LeadListPage({
           lookups={lookups}
           current={params}
           isStaff={profile.role !== "agent"}
+          isAdmin={profile.role === "admin"}
         />
         <div className="ml-auto flex flex-wrap gap-2">
           <Link

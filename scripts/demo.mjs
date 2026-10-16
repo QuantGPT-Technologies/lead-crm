@@ -87,6 +87,8 @@ await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-003-lead-catego
 await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-004-separate-sheet-leads.sql"), "utf8"));
 await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-005-lead-meetings.sql"), "utf8"));
 await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-006-firebase-agent-login.sql"), "utf8"));
+await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-007-email-login.sql"), "utf8"));
+await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-008-team-access.sql"), "utf8"));
 await configureLocalKanban(db, { once: true });
 
 async function seed() {
