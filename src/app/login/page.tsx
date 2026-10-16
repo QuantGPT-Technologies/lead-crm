@@ -4,6 +4,9 @@ import { readSigned } from "@/lib/signed-cookie";
 import { one, type SearchParams } from "@/lib/utils";
 import { LoginFlow } from "./login-flow";
 import { BrandLogo } from "@/components/brand-logo";
+import { LoginPortal } from "./login-portal";
+import { agentFirebaseRequired } from "@/lib/agent-auth";
+import { firebasePhoneServerConfigured } from "@/lib/firebase-admin";
 export default async function LoginPage({
   searchParams,
 }: {
@@ -15,6 +18,8 @@ export default async function LoginPage({
     ? !!(await readSigned("crm_global").catch(() => null))
     : true;
   const next = one(sp.next);
+  const destination = next && /^\/(?!\/)[^\\\s]*$/.test(next) ? next : "/dashboard";
+  const phoneMode = await agentFirebaseRequired();
   return (
     <main className="grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
       <section className="login-story relative hidden flex-col justify-between overflow-hidden p-12 lg:flex xl:p-16">
@@ -73,17 +78,18 @@ export default async function LoginPage({
           </span>
         </div>
         <div className="my-14">
-          <LoginFlow
+          {!useGlobal || phoneMode ? <LoginPortal next={destination} useOtp={requireOtp()} agentEnabled={phoneMode && firebasePhoneServerConfigured()}
+            notice={one(sp.error) === "inactive" ? "Your account is inactive. Contact your administrator." : one(sp.error) === "otp_required" ? "Use sales agent SMS sign-in." : undefined} /> : <LoginFlow
             useGlobal={useGlobal}
             useOtp={requireOtp()}
             initialStep={globalDone ? "user" : "global"}
-            next={next && /^\/(?!\/)[^\\\s]*$/.test(next) ? next : "/dashboard"}
+            next={destination}
             notice={
               one(sp.error) === "inactive"
                 ? "Your account is not active. Contact your administrator."
                 : undefined
             }
-          />
+          />}
         </div>
         <p className="text-center text-[11px] leading-6 text-muted">
           © {new Date().getFullYear()} {env.companyName}

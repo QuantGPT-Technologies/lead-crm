@@ -198,3 +198,18 @@ src/app/(app)/ops-actions.ts     upload, distribute, users, masters, settings
 
 Set `NEXT_PUBLIC_APP_NAME` and `NEXT_PUBLIC_COMPANY_NAME` in `.env.local`. Colours are the `--brand*` variables at the
 top of `src/app/globals.css`. The sidebar logo is in `src/components/sidebar.tsx`.
+
+## Production staff sign-in
+
+Admins and managers use email/User ID and password. Sales agents use **Sales agent → registered mobile number → SMS OTP** once Firebase mode is enabled. Admins register each agent in Configuration → Users; active agents must have distinct mobile numbers. Agents cannot change their own login number. Firebase users without a matching active CRM agent receive no CRM access.
+
+1. Apply `supabase/upgrade-006-firebase-agent-login.sql`. It installs the private session proof tables and starts in `password` mode, preserving access during setup.
+2. Set the five `NEXT_PUBLIC_FIREBASE_*` web configuration fields (API key, auth domain, project ID, sender ID, app ID) in local and production environments. Set `AUTH_REQUIRE_GLOBAL_LOGIN=false`. SMS login needs neither a service-account private key nor a VAPID key. Push notifications have separate requirements.
+3. Enable Firebase Authentication's Phone provider. Authorize `lead-crm-orpin-ten.vercel.app` and any other actual login domains, configure billing and the India SMS region policy. Firebase's reCAPTCHA must be allowed by the browser.
+4. Deploy, then run `node scripts/enable-agent-otp.mjs` for readiness checks. After confirming Phone/SMS setup, run `node scripts/enable-agent-otp.mjs --activate --phone-provider-ready`. This switches the database setting to `firebase`; existing agent password sessions lose CRM access immediately.
+
+The server verifies Google signatures, project/issuer/expiry, recent phone authentication and live Firebase account status through the end-user account lookup API. It consumes each verification once and records a private proof for the resulting Supabase session. RLS checks that proof, registered number and expiry; browser password authentication alone cannot bypass it. CRM proof expires after 12 hours. Firebase disables/revocations are checked at sign-in; deactivate a CRM user to stop existing CRM access immediately.
+
+The requested production admins are `director@successmentorix.com` and `founder@successmentorix.com`. `node scripts/setup-production-logins.mjs` provisions them with random undisclosed initial passwords and deactivates the three explicitly approved test accounts. It preserves existing leads and other users. To send password setup emails after deployment, use `node scripts/setup-production-logins.mjs --send-setup`. Supabase must have a working mail sender; its recovery template must include the confirmation link. Set its Site URL to `https://lead-crm-orpin-ten.vercel.app` and allow `https://lead-crm-orpin-ten.vercel.app/login/password-setup` in Redirect URLs. Setup links never appear in script output.
+
+Validation: `node scripts/verify-agent-login.mjs` runs local PostgreSQL authorization checks with rollback fixtures; `node scripts/verify-firebase-token.mjs` checks keyless initialization and account validation without sending SMS. A real SMS login still requires a registered agent's phone and enabled Firebase delivery.

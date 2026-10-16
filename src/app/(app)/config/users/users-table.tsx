@@ -16,8 +16,9 @@ const ROLE_COLOR: Record<string, string> = { admin: "#c026d3", manager: "#0284c7
 
 type Dialog = { kind: "new" } | { kind: "edit"; user: Profile } | { kind: "password"; user: Profile };
 
-export function UsersTable({ users, selfId }: { users: Profile[]; selfId: string }) {
+export function UsersTable({ users, selfId, agentOtp = false }: { users: Profile[]; selfId: string; agentOtp?: boolean }) {
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [selectedRole, setSelectedRole] = useState("agent");
   const [pending, start] = useTransition();
   const managers = users.filter((u) => u.is_active && u.role !== "agent").map((u) => ({ value: u.id, label: u.full_name }));
   const nameOf = (id: string | null) => users.find((u) => u.id === id)?.full_name ?? "";
@@ -44,7 +45,7 @@ export function UsersTable({ users, selfId }: { users: Profile[]; selfId: string
     <Card>
       <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <p className="text-muted">{users.filter((u) => u.is_active).length} active user(s)</p>
-        <Button onClick={() => setDialog({ kind: "new" })}>
+          <Button onClick={() => { setSelectedRole("agent"); setDialog({ kind: "new" }); }}>
           <Plus size={15} /> Add user
         </Button>
       </div>
@@ -68,12 +69,12 @@ export function UsersTable({ users, selfId }: { users: Profile[]; selfId: string
                   <Badge color={u.is_active ? "#16a34a" : "#dc2626"}>{u.is_active ? "Active" : "Deactivated"}</Badge>
                 </td>
                 <td className="text-right">
-                  <Button variant="ghost" className="h-8" aria-label={`Edit ${u.full_name}`} onClick={() => setDialog({ kind: "edit", user: u })}>
+                    <Button variant="ghost" className="h-8" aria-label={`Edit ${u.full_name}`} onClick={() => { setSelectedRole(u.role); setDialog({ kind: "edit", user: u }); }}>
                     <Pencil size={14} />
                   </Button>
-                  <Button variant="ghost" className="h-8" aria-label={`Reset password of ${u.full_name}`} onClick={() => setDialog({ kind: "password", user: u })}>
+                    {!(agentOtp && u.role === "agent") && <Button variant="ghost" className="h-8" aria-label={`Reset password of ${u.full_name}`} onClick={() => setDialog({ kind: "password", user: u })}>
                     <KeyRound size={14} />
-                  </Button>
+                    </Button>}
                 </td>
               </tr>
             ))}
@@ -90,15 +91,15 @@ export function UsersTable({ users, selfId }: { users: Profile[]; selfId: string
                   <input name="full_name" required defaultValue={editing?.full_name} className="input" />
                 </Field>
                 {dialog.kind === "new" && (
-                  <Field label="Email (used for login and OTP)" required>
+                    <Field label="Email" required>
                     <input name="email" type="email" required autoComplete="off" className="input" />
                   </Field>
                 )}
-                <Field label="Phone">
-                  <input name="phone" type="tel" defaultValue={editing?.phone ?? ""} className="input" />
+                  <Field label={agentOtp && selectedRole === "agent" ? "Registered mobile number (SMS login)" : "Phone"} required={agentOtp && selectedRole === "agent"}>
+                    <input name="phone" type="tel" required={agentOtp && selectedRole === "agent"} defaultValue={editing?.phone ?? ""} className="input" />
                 </Field>
                 <Field label="Role" required>
-                  <Select name="role" required defaultValue={editing?.role ?? "agent"} options={ROLES} placeholder={null} />
+                    <Select name="role" required value={selectedRole} onChange={e => setSelectedRole(e.target.value)} options={ROLES} placeholder={null} />
                 </Field>
                 <Field label="Reports to (manager)">
                   <Select name="manager_id" defaultValue={editing?.manager_id ?? ""} options={managers.filter((m) => m.value !== editing?.id)} placeholder="Nobody" />
@@ -111,12 +112,12 @@ export function UsersTable({ users, selfId }: { users: Profile[]; selfId: string
                 )}
               </>
             )}
-            {dialog.kind !== "edit" && (
+              {dialog.kind !== "edit" && !(dialog.kind === "new" && agentOtp && selectedRole === "agent") && (
               <Field label={dialog.kind === "new" ? "Initial password" : "New password"} required>
                 <input name="password" type="text" required minLength={8} autoComplete="new-password" placeholder="At least 8 characters, letters and numbers" className="input" />
               </Field>
             )}
-            {dialog.kind === "new" && <p className="text-xs text-muted">The User ID (e.g. EA00000002) is generated automatically and shown after saving. Share it with the user along with the password.</p>}
+              {dialog.kind === "new" && <p className="text-xs text-muted">{agentOtp && selectedRole === "agent" ? "The agent will sign in with an SMS code sent to this mobile number. Every active agent must have a different number." : "The User ID is generated automatically. Share it with the user along with the password."}</p>}
             <div className="flex gap-2 pt-2">
               <Button type="submit" disabled={pending}>
                 {pending ? "Saving..." : "Save"}

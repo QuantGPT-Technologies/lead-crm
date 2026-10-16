@@ -14,3 +14,7 @@ export const isFirebaseConfigured = () =>
   !!(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.messagingSenderId && firebaseConfig.appId && vapidKey);
 
 export const firebaseApp = () => getApps()[0] ?? initializeApp(firebaseConfig);
+
+/** Phone login does not depend on push messaging or a VAPID key. */
+export const isFirebasePhoneConfigured = () =>
+  !!(firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId && firebaseConfig.appId);
