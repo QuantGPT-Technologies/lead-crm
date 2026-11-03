@@ -13,6 +13,11 @@ type Values = Record<string, string | boolean>;
 /** List + add/edit dialog for one admin-editable lookup table, generated from its definition in lib/masters.ts. */
 export function MasterCrud({ table, rows, refs }: { table: MasterTable; rows: Row[]; refs: Partial<Record<MasterTable, { value: string; label: string }[]>> }) {
   const def = MASTERS[table];
+  const [sort, setSort] = useState({ key: "", asc: true });
+  const ordered = sort.key ? [...rows].sort((a, b) => {
+    const x = a[sort.key], y = b[sort.key];
+    return (typeof x === "number" && typeof y === "number" ? x-y : String(x ?? "").localeCompare(String(y ?? ""), undefined, { numeric: true })) * (sort.asc ? 1 : -1);
+  }) : rows;
   const [editing, setEditing] = useState<{ id: string | null; values: Values } | null>(null);
   const [pending, start] = useTransition();
 
@@ -35,6 +40,7 @@ export function MasterCrud({ table, rows, refs }: { table: MasterTable; rows: Ro
           <Plus size={15} /> Add
         </Button>
       </div>
+      <div className="flex gap-2 p-3"><select aria-label="Sort masters" value={sort.key} onChange={event => setSort({ ...sort, key: event.target.value })} className="input !w-auto"><option value="">Configured order</option>{def.fields.map(field => <option key={field.name} value={field.name}>{field.label}</option>)}</select><button type="button" className="text-xs" onClick={() => setSort({ ...sort, asc: !sort.asc })}>{sort.asc ? "Ascending ?" : "Descending ?"}</button></div>
       <div className="overflow-x-auto">
         <table className="table-grid w-full border-collapse">
           <thead>
@@ -45,7 +51,7 @@ export function MasterCrud({ table, rows, refs }: { table: MasterTable; rows: Ro
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {ordered.map((r) => (
               <tr key={r.id}>
                 {def.fields.map((f) => (
                   <td key={f.name} className="max-w-xs truncate">{show(f, r)}</td>
@@ -91,6 +97,7 @@ export function MasterCrud({ table, rows, refs }: { table: MasterTable; rows: Ro
               }
               return (
                 <Field key={f.name} label={f.label} required={f.required}>
+                  {f.type === "color" && <div className="mb-2 flex flex-wrap gap-2">{["#16a34a", "#2563eb", "#7c3aed", "#db2777", "#dc2626", "#ea580c", "#d97706", "#0891b2", "#64748b"].map(color => <button key={color} type="button" aria-label={`Use ${color}`} onClick={() => set(color)} className="h-7 w-7 rounded border border-line" style={{ background: color }} />)}</div>}
                   {f.type === "select" ? (
                     <Select required={f.required} value={String(value)} onChange={(e) => set(e.target.value)} options={options(f)} />
                   ) : f.type === "textarea" ? (

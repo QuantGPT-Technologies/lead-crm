@@ -12,7 +12,10 @@ export async function createClient() {
       getAll: () => cookieStore.getAll(),
       setAll: (list) => {
         try {
-          list.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
+          list.forEach(({ name, value, options }) => cookieStore.set(name, value, {
+            ...options,
+            ...(options.maxAge === 0 ? {} : { maxAge: undefined, expires: undefined }),
+          }));
         } catch {
           // Called from a Server Component: cookies are refreshed by src/proxy.ts instead.
         }

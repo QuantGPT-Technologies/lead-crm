@@ -22,20 +22,16 @@ import {
 import { LeadFilterBar } from "./lead-filter-bar";
 import { LeadTable, type LeadRow } from "./lead-table";
 import { CategorySwitcher } from "./category-switcher";
+import { DateFilter } from "@/components/date-filter";
+import { LEAD_SORTS, viewHref } from "@/lib/view-filters";
 
-const SORTS = [
-  "created_at",
-  "student_name",
-  "attempt_count",
-  "next_followup_at",
-  "lead_no",
-];
+const SORTS = LEAD_SORTS;
 const SIZES = [25, 50, 100];
 
 const LIST_COLUMNS =
-    "id, lead_no, student_name, mobile, email, product, city, priority, category, attempt_count, next_followup_at, created_at, " +
+    "id, lead_no, student_name, mobile, email, product, city, priority, category, attempt_count, total_calls, last_attempt_at, other_fields, next_followup_at, created_at, " +
   "source:lead_sources(name), university:universities(name), course:courses(name), stage:stages(name, color), " +
-  "sub_stage:sub_stages(name), owner:profiles!leads_owner_id_fkey(full_name)";
+  "sub_stage:sub_stages(name,color), owner:profiles!leads_owner_id_fkey(full_name)";
 
 type Rel = { name?: string; color?: string; full_name?: string } | null;
 
@@ -50,6 +46,7 @@ export default async function LeadListPage({
   const filters: LeadFilters = Object.fromEntries(
     LEAD_FILTER_KEYS.map((k) => [k, one(sp[k])]),
   );
+  const assigning = profile.role !== "agent" && filters.owner === "none";
   const page = Math.max(1, Number(one(sp.page)) || 1);
   const size = SIZES.includes(Number(one(sp.size))) ? Number(one(sp.size)) : 50;
   const sort = SORTS.includes(one(sp.sort) ?? "")
@@ -62,6 +59,7 @@ export default async function LeadListPage({
     filters,
   )
     .order(sort, { ascending: asc, nullsFirst: false })
+    .order("id", { ascending: asc })
     .range((page - 1) * size, page * size - 1);
   const [{ data, count, error }, maskSetting, lookups] = await Promise.all([
     query,
@@ -93,18 +91,22 @@ export default async function LeadListPage({
     email: masked
       ? maskEmail(l.email as string | null)
       : ((l.email as string | null) ?? ""),
-    university: (l.university as Rel)?.name ?? "",
-    course: (l.course as Rel)?.name ?? "",
-    stage: (l.stage as Rel)?.name ?? "",
+    university: (l.other_fields as Record<string, string> | null)?.university_id || (l.university as Rel)?.name || "",
+    course: (l.other_fields as Record<string, string> | null)?.course_id || (l.course as Rel)?.name || "",
+    stage: (l.other_fields as Record<string, string> | null)?.stage_id || (l.stage as Rel)?.name || "",
     stageColor: (l.stage as Rel)?.color ?? "#64748b",
-    subStage: (l.sub_stage as Rel)?.name ?? "",
-    source: (l.source as Rel)?.name ?? "",
+    subStage: (l.other_fields as Record<string, string> | null)?.sub_stage_id || (l.sub_stage as Rel)?.name || "",
+    subStageColor: (l.sub_stage as Rel)?.color ?? "#64748b",
+    source: (l.other_fields as Record<string, string> | null)?.source_id || (l.source as Rel)?.name || "",
     owner: (l.owner as Rel)?.full_name ?? "Unassigned",
     product: (l.product as string | null) ?? "",
     city: (l.city as string | null) ?? "",
     priority: l.priority as string,
+    priorityDescription: (l.other_fields as Record<string, string> | null)?.priority,
       category: (l.category as string | null) ?? "Uncategorized",
     attempts: l.attempt_count as number,
+    calls: Number(l.total_calls ?? 0),
+    lastAttempt: fmtDateTime(l.last_attempt_at as string | null),
     followup: fmtDateTime(l.next_followup_at as string | null),
     overdue:
       !!l.next_followup_at &&
@@ -118,6 +120,10 @@ export default async function LeadListPage({
     sort,
     dir: asc ? "asc" : "desc",
   };
+  const assignmentParams = new URLSearchParams();
+  Object.entries({ ...params, owner: assigning ? "" : "none" }).forEach(
+    ([key, value]) => value && assignmentParams.set(key, value),
+  );
   const followupHref = (v: "today" | "missed") => {
     // toggles this one filter and keeps every other filter, the sort and the page size
     const s = new URLSearchParams();
@@ -131,8 +137,8 @@ export default async function LeadListPage({
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Your leads"
-        description="Real people. New possibilities. Keep every relationship moving."
+        title={assigning ? "Assign unassigned leads" : "Your leads"}
+        description={assigning ? "Only leads without an owner are shown. Assigned leads leave this list automatically." : "Real people. New possibilities. Keep every relationship moving."}
       >
         <div className="segmented">
           <Link
@@ -143,17 +149,26 @@ export default async function LeadListPage({
             <List size={14} />
             List
           </Link>
-            <Link href={filters.category ? `/leads/kanban?${new URLSearchParams({ category: filters.category })}` : "/leads/kanban"} className="flex items-center gap-2">
+            <Link href={viewHref("/leads/kanban", params)} className="flex items-center gap-2">
             <Columns3 size={14} />
             Board
           </Link>
         </div>
+        {profile.role !== "agent" && (
+          <Link
+            href={`/leads?${assignmentParams}`}
+            className={btn("outline")}
+          >
+            {assigning ? "View all leads" : "Bulk assign"}
+          </Link>
+        )}
         <Link href="/leads/new" className={btn()}>
           <Plus size={15} />
           New lead
         </Link>
       </PageHeader>
         <CategorySwitcher current={params} />
+        <DateFilter label="Lead dates" field />
       <Card className="flex flex-wrap items-center gap-2 p-4">
         <LeadFilterBar
           lookups={lookups}

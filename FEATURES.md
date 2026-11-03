@@ -4,6 +4,25 @@ This CRM supports an education sales team's workflow from collecting student enq
 
 This inventory reflects the current project implementation, reviewed on 14 October 2026. Features marked as optional require configuration; their presence in the project does not confirm that they are enabled in a deployment.
 
+## Workflow and reporting update ? 3 November 2026
+
+- Lead list and pipeline filters are remembered per signed-in user and browser tab; returning from a lead and switching List/Board retain the selected filters.
+- Lead ordering uses creation date plus a stable ID, so editing a lead does not shuffle it. Sorting controls are available on lead tables, reports, operational logs, team members, and masters.
+- Date controls cover lead creation, last attempt, next follow-up, rechurn, allotment, reports, dashboard, activities, messages, opportunities, enrolments, uploads, account creation, and lead history. Distribution and transfers support date restrictions.
+- Employee reports default to one summary row per employee for the selected date range. Daily, weekly (Monday start), and monthly breakdowns remain available; inactive periods are hidden unless explicitly included. CSV exports follow the chosen view.
+- Employee reports provide daily, weekly (Monday start), and monthly periods, with source/employee/status filters, separate calls and attempts, talk time, follow-ups, enrolments, collections, and every current status. CSV exports include the displayed report columns.
+- Lead reports group by status, sub-status, source, attempt count, employee, university, program, city, priority, category, and rechurn. Dates refer to the lead creation cohort; call/attempt totals are lifetime values for that cohort.
+- Sales agents do not see category controls in the pipeline.
+- Rechurned/never-rechurned filters work in List and Board; rechurning preserves lifetime attempts.
+- Kanban cards show the last activity, its timestamp, total calls, total saved attempts, last attempt date/time, and next follow-up.
+- Each saved lead activity counts once as an attempt, including small edits and notes. No-change saves do not count. Calls are tracked separately. Derived counters cannot be edited directly by signed-in clients.
+- Other + a text box is supported for source, university, program, status, sub-status, gender, priority, and call outcomes. Other text stays with the lead; global masters and valid account/role choices remain controlled.
+- The notification bell shows upcoming/overdue follow-ups (including meeting follow-up tasks) and recent updates to owned leads, refreshes every minute, and supports marking notices read in the current browser.
+- Admins can choose custom colours and preset swatches for statuses and sub-statuses in Configuration ? Masters.
+- Existing databases require `supabase/upgrade-012-workflow-reports.sql` after upgrades 001?011. The demo applies it on startup; fresh `schema.sql` installations include it.
+
+- Report timeout fix: upgrade-013 pre-aggregates leads, resolves permitted labels once, and caches fixed read-policy checks. Report failures do not display a false zero-lead count or offer an empty CSV export.
+
 ## 1. Login and access control
 
 - Individual login using a User ID or email and password.
@@ -39,6 +58,8 @@ This inventory reflects the current project implementation, reviewed on 14 Octob
 - Hot, warm, and cold lead priorities.
 - Required-field, contact-format, date, and dropdown relationship validation.
 - University-specific course choices and stage-specific sub-stage choices.
+- Add Lead shows University and Program selectors in an expanded section, with Amity, UU, SGT, GLA, SMU, MUJ, and NMIMS university options.
+- University-linked degree-level program options distinguish Campus, Online, and Hybrid where cataloged; admins can add specializations under Masters → Courses.
 - Agents automatically own leads they create; managers and admins can select an owner.
 
 | Information group | Fields provided |
@@ -64,12 +85,13 @@ This inventory reflects the current project implementation, reviewed on 14 Octob
 - Filter values retained in the URL for bookmarking or sharing, subject to the recipient's access.
 - Configurable masking of contact details in the lead list.
 - Bulk stage changes.
-- Bulk assignment or return to the unassigned pool for managers and admins.
+- Bulk assignment uses an unassigned-only lead view; already assigned leads are excluded and protected against reassignment from stale selections.
 - Bulk deletion for admins, with a confirmation dialog.
 
 ## 5. Kanban pipeline
 
 - View leads arranged by stage.
+- See each lead's primary phone number on the board for all roles, with click-to-call access.
 - Move leads between stages using drag and drop.
 - Use configured stages and stage colours to understand pipeline progress.
 - Open individual leads from the board.
@@ -93,6 +115,7 @@ This inventory reflects the current project implementation, reviewed on 14 Octob
 ## 7. Lead distribution and data allotment
 
 - Distribute unassigned leads evenly among selected active users using round robin.
+- Preserve leads assigned by another user during distribution; report and audit only the leads actually assigned.
 - Select how many leads to distribute.
 - Restrict distribution by upload batch, source, or stage.
 - View each user's current lead load before distribution.

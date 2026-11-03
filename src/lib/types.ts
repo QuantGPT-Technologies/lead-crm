@@ -1,3 +1,5 @@
+import type { LeadCategory } from "@/lib/lead-categories";
+
 export type Role = "admin" | "manager" | "agent";
 
 export interface Profile {
@@ -29,6 +31,7 @@ export interface Stage extends Named {
 }
 export interface SubStage extends Named {
   stage_id: string;
+  color?: string;
 }
 export interface Template extends Named {
   channel: "email" | "sms" | "whatsapp";
@@ -62,8 +65,8 @@ export interface Lead {
   campaign: string | null;
   medium: string | null;
   product: string | null;
-  priority: "hot" | "warm" | "cold";
-  category: "A" | "B" | "C" | "D" | null;
+  priority: "hot" | "warm" | "cold" | "other";
+  category: LeadCategory | null;
   university_id: string | null;
   course_id: string | null;
   stage_id: string | null;
@@ -82,6 +85,11 @@ export interface Lead {
   allotted_at: string | null;
   internal_notes: string | null;
   attempt_count: number;
+  total_calls: number;
+  last_attempt_at: string | null;
+  last_activity_at: string | null;
+  last_activity_summary: string | null;
+  other_fields: Record<string, string>;
   last_contacted_at: string | null;
   next_followup_at: string | null;
   rechurn_count: number;

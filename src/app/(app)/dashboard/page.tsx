@@ -1,3 +1,4 @@
+import { DateFilter } from "@/components/date-filter";
 import Link from "next/link";
 import {
   ArrowDownRight,
@@ -39,10 +40,10 @@ export default async function DashboardPage({
   const days = RANGES.includes(Number(one(sp.days)))
     ? Number(one(sp.days))
     : 30;
-  const range = dateRange(undefined, undefined, days);
+  const range = dateRange(one(sp.from), one(sp.to), days);
   const { start: today, end: tomorrow } = todayBounds();
   const [counts, bySource, daily, recent, nextTasks] = await Promise.all([
-    getDashboardCounts(reports, profile.id, today, tomorrow),
+    getDashboardCounts(reports, profile.id, today, tomorrow, range),
     reports.rpc("report_leads_by", {
       p_dim: "source",
       p_from: range.from.toISOString(),
@@ -124,6 +125,7 @@ export default async function DashboardPage({
   }[];
   return (
     <div className="space-y-6">
+      <DateFilter label="Dashboard report dates" allowAll={false} defaults={{ from: range.fromStr, to: range.toStr }} />
       {one(sp.denied) && (
         <p role="alert" className="rounded-xl bg-red-500/10 p-4 text-red-600">
           You do not have access to that page. Ask an admin if you need it.
@@ -206,9 +208,9 @@ export default async function DashboardPage({
       </div>
       <div>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Your week in numbers</h2>
+          <h2 className="text-sm font-semibold">Your selected period in numbers</h2>
           <span className="text-[11px] text-muted">
-            Last 7 days vs previous 7 days
+            {range.fromStr} to {range.toStr} vs preceding period
           </span>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -250,7 +252,7 @@ export default async function DashboardPage({
                     {Math.abs(delta).toFixed(1)}
                     {t.pct ? " pp" : "%"}
                   </span>
-                  <span className="text-muted">vs last week</span>
+                  <span className="text-muted">vs preceding period</span>
                 </div>
               </Link>
             );
@@ -283,7 +285,7 @@ export default async function DashboardPage({
         <Card className="p-6">
           <h2 className="text-base font-semibold">Where leads come from</h2>
           <p className="mt-1 text-xs text-muted">
-            Source mix · last {days} days
+            Source mix · selected period
           </p>
           <SourceChart data={sources} />
         </Card>

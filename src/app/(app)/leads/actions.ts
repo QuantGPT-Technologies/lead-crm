@@ -5,6 +5,8 @@ import { z } from "zod";
 import { getSession, isStaff } from "@/lib/auth";
 import { chunk, getLookups, getSetting, logActivity } from "@/lib/data";
 import { createAdminClient } from "@/lib/supabase/server";
+import { isLeadCategory } from "@/lib/lead-categories";
+import { otherFields, equalOtherFields } from "@/lib/other-fields";
 import { deliver } from "@/lib/messaging";
 import type { ActionResult, Lead, Lookups } from "@/lib/types";
 import { isDateString, isValidEmail, isValidMobile, normalizeMobile } from "@/lib/utils";
@@ -54,7 +56,7 @@ function clean(values: Values, fields: readonly string[]) {
 }
 
 const GENDERS = ["male", "female", "other"];
-const PRIORITIES = ["hot", "warm", "cold"];
+const PRIORITIES = ["hot", "warm", "cold", "other"];
 
 function validate(v: Values): string | null {
   if ("student_name" in v && String(v.student_name ?? "").length < 2) return "Student name is required";
@@ -128,6 +130,9 @@ export async function createLead(values: Values): Promise<ActionResult> {
   const lk = await getLookups();
   const all = Object.values(SECTIONS).flat();
   const row = clean(values, all);
+  const custom = otherFields(values, lk, all);
+  if (custom.error) return { error: custom.error };
+  row.other_fields = custom.fields;
   const problem = validate({ student_name: "", mobile: "", ...row });
   if (problem) return { error: problem };
 
@@ -186,11 +191,14 @@ export async function updateLead(id: string, section: LeadSection, values: Value
   const { data: before } = await supabase.from("leads").select("*").eq("id", id).maybeSingle();
   if (!before) return { error: "Lead not found" };
   const lead = before as Lead & Values;
+  const custom = otherFields(values, lk, fields, lead.other_fields);
+  if (custom.error) return { error: custom.error };
+  if (!equalOtherFields(custom.fields, lead.other_fields ?? {})) patch.other_fields = custom.fields;
 
   const changes: Record<string, string> = {};
   for (const [k, v] of Object.entries(patch)) {
     const old = (lead as Values)[k] ?? null;
-    if (String(old ?? "") === String(v ?? "")) delete patch[k];
+    if (JSON.stringify(old ?? "") === JSON.stringify(v ?? "")) delete patch[k];
     else changes[LABELS[k] ?? k] = `${display(k, old, lk)} → ${display(k, v, lk)}`;
   }
   if (!Object.keys(patch).length) return { message: "No changes to save" };
@@ -222,16 +230,22 @@ export async function updateLead(id: string, section: LeadSection, values: Value
   return done();
 }
 
-export async function moveStage(id: string, stageId: string): Promise<ActionResult> {
+export async function moveStage(id: string, stageId: string, otherText?: string): Promise<ActionResult> {
   const { supabase, profile } = await getSession();
   const lk = await getLookups();
   const stage = lk.stages.find((s) => s.id === stageId);
   if (!stage) return { error: "Unknown stage" };
-  const { data: lead } = await supabase.from("leads").select("student_name, stage_id").eq("id", id).maybeSingle();
+  const { data: lead } = await supabase.from("leads").select("student_name, stage_id, other_fields").eq("id", id).maybeSingle();
   if (!lead) return { error: "Lead not found" };
   if (lead.stage_id === stageId) return {};
 
-  const { error } = await supabase.from("leads").update({ stage_id: stageId, sub_stage_id: null }).eq("id", id);
+  const custom = { ...(lead.other_fields ?? {}) } as Record<string, string>;
+  delete custom.sub_stage_id;
+  if (stage.name.toLowerCase() === "other") {
+    if (!otherText?.trim() || otherText.trim().length > 200) return { error: "Specify the other status (1–200 characters)" };
+    custom.stage_id = otherText.trim();
+  } else delete custom.stage_id;
+  const { error } = await supabase.from("leads").update({ stage_id: stageId, sub_stage_id: null, other_fields: custom }).eq("id", id);
   if (error) return { error: dbError(error) };
   await logActivity(supabase, [
     {
@@ -246,6 +260,15 @@ export async function moveStage(id: string, stageId: string): Promise<ActionResu
 }
 
 export async function assignLeads(ids: string[], ownerId: string | null): Promise<ActionResult> {
+  return changeLeadOwner(ids, ownerId, false);
+}
+
+export async function bulkAssignLeads(ids: string[], ownerId: string): Promise<ActionResult> {
+  if (!ownerId) return { error: "Choose a user to receive unassigned leads" };
+  return changeLeadOwner(ids, ownerId, true);
+}
+
+async function changeLeadOwner(ids: string[], ownerId: string | null, onlyUnassigned: boolean): Promise<ActionResult> {
   const { supabase, profile } = await getSession();
   if (!isStaff(profile.role)) return { error: "Only managers and admins can assign leads" };
   if (profile.role === "manager" && !ownerId) return { error: "Only admins can move leads to the unassigned pool" };
@@ -263,17 +286,24 @@ export async function assignLeads(ids: string[], ownerId: string | null): Promis
     if (error) return { error: dbError(error) };
     const visibleIds = (visible ?? []).map((l) => l.id as string);
     if (!visibleIds.length) continue;
-    const { error: upErr } = await admin.from("leads").update({ owner_id: ownerId, allotted_at }).in("id", visibleIds);
+    let update = admin.from("leads").update({ owner_id: ownerId, allotted_at }).in("id", visibleIds);
+    // Check at write time: another user may have assigned a lead since this page loaded.
+    if (onlyUnassigned) update = update.is("owner_id", null);
+    const { data: changed, error: upErr } = await update.select("id");
     if (upErr) return { error: dbError(upErr) };
-    assigned.push(...visibleIds);
+    assigned.push(...(changed ?? []).map((lead) => lead.id as string));
   }
 
+  if (onlyUnassigned && !assigned.length) {
+    return done({ message: "No unassigned leads remain in your selection. Existing assignments were kept." });
+  }
   const who = ownerId ? display("owner_id", ownerId, lk) : "the unassigned pool";
   await logActivity(
     supabase,
     assigned.map((id) => ({ lead_id: id, actor_id: profile.id, type: "assigned", summary: `${profile.full_name} assigned this lead to ${who}` })),
   );
-  return done({ message: `${assigned.length} lead(s) assigned to ${who}` });
+  const skipped = onlyUnassigned ? new Set(parsed.data).size - assigned.length : 0;
+  return done({ message: `${assigned.length} lead(s) assigned to ${who}${skipped ? `; ${skipped} skipped because they are already assigned or unavailable` : ""}` });
 }
 
 export async function bulkStage(ids: string[], stageId: string): Promise<ActionResult> {
@@ -308,7 +338,7 @@ export async function moveCategory(ids: string[], category: string | null): Prom
   if (profile.role !== "admin") return { error: "Only admins can change lead categories" };
   const parsed = idList.safeParse(ids);
   if (!parsed.success) return { error: parsed.error.issues[0].message };
-  if (category !== null && !["A", "B", "C", "D"].includes(category)) return { error: "Choose category A, B, C or D" };
+  if (category !== null && !isLeadCategory(category)) return { error: "Choose category A, B, C, D or UT" };
   const { data, error } = await supabase.from("leads").update({ category }).in("id", parsed.data).select("id");
   if (error) return { error: dbError(error) };
   return done({ message: `${data?.length ?? 0} lead(s) moved to ${category ? `category ${category}` : "Uncategorized"}` });
@@ -333,6 +363,18 @@ export async function rechurnLead(id: string, reason: string, ownerId: string | 
 
   // close open follow-ups first: the lead may leave this user's visibility once it is reassigned
   await supabase.from("tasks").update({ status: "cancelled" }).eq("lead_id", id).eq("status", "pending");
+  const { error } = await createAdminClient()
+    .from("leads")
+    .update({
+      stage_id: first.id,
+      sub_stage_id: rechurned?.id ?? null,
+      rechurn_count: lead.rechurn_count + 1,
+      last_rechurned_at: now,
+      owner_id: ownerId,
+      allotted_at: ownerId ? now : null,
+    })
+    .eq("id", id);
+  if (error) return { error: dbError(error) };
   await logActivity(supabase, [
     {
       lead_id: id,
@@ -342,19 +384,6 @@ export async function rechurnLead(id: string, reason: string, ownerId: string | 
       details: { fields: { Reason: reason.trim(), "Previous Stage": display("stage_id", lead.stage_id, lk), "Previous Owner": display("owner_id", lead.owner_id, lk), "New Owner": display("owner_id", ownerId, lk) } },
     },
   ]);
-  const { error } = await createAdminClient()
-    .from("leads")
-    .update({
-      stage_id: first.id,
-      sub_stage_id: rechurned?.id ?? null,
-      attempt_count: 0,
-      rechurn_count: lead.rechurn_count + 1,
-      last_rechurned_at: now,
-      owner_id: ownerId,
-      allotted_at: ownerId ? now : null,
-    })
-    .eq("id", id);
-  if (error) return { error: dbError(error) };
   return done({ message: "Lead rechurned" });
 }
 
@@ -424,14 +453,15 @@ export async function completeTask(taskId: string, status: "done" | "cancelled" 
   return done({ message: status === "done" ? "Marked done" : "Cancelled" });
 }
 
-const OUTCOMES = ["connected", "no_answer", "busy", "switched_off", "wrong_number", "callback"] as const;
+const OUTCOMES = ["connected", "no_answer", "busy", "switched_off", "wrong_number", "callback", "other"] as const;
 
 export async function logCall(
   leadId: string,
-  v: { outcome: string; duration_sec?: number; notes?: string; followup_at?: string; direction?: string },
+  v: { outcome: string; other_outcome?: string; duration_sec?: number; notes?: string; followup_at?: string; direction?: string },
 ): Promise<ActionResult> {
   const { supabase, profile } = await getSession();
   if (!OUTCOMES.includes(v.outcome as (typeof OUTCOMES)[number])) return { error: "Choose a call outcome" };
+  if (v.outcome === "other" && (!v.other_outcome?.trim() || v.other_outcome.trim().length > 200)) return { error: "Specify the other call outcome (1–200 characters)" };
   const duration = Math.max(0, Math.min(86_400, Math.round(Number(v.duration_sec) || 0)));
   const followup = v.followup_at ? new Date(v.followup_at) : null;
   if (followup && Number.isNaN(followup.getTime())) return { error: "Follow-up date is not valid" };
@@ -446,13 +476,13 @@ export async function logCall(
     user_id: profile.id,
     direction: v.direction === "inbound" ? "inbound" : "outbound",
     outcome: v.outcome,
+    other_outcome: v.outcome === "other" ? v.other_outcome!.trim() : null,
     duration_sec: duration,
     notes: v.notes?.trim() || null,
   });
   if (error) return { error: dbError(error) };
 
-  // the counters are locked against direct edits in the database, so the app sets them with the service role
-  await createAdminClient().from("leads").update({ attempt_count: lead.attempt_count + 1, last_contacted_at: new Date().toISOString() }).eq("id", leadId);
+  // Database triggers count calls and saved activity atomically (upgrade-012).
   if (followup) {
     await supabase.from("tasks").insert({ lead_id: leadId, title: "Call back", due_at: followup.toISOString(), assigned_to: profile.id, created_by: profile.id });
   }
@@ -461,7 +491,7 @@ export async function logCall(
       lead_id: leadId,
       actor_id: profile.id,
       type: "call",
-      summary: `${profile.full_name} logged a call (${v.outcome.replace("_", " ")})`,
+      summary: `${profile.full_name} logged a call (${(v.outcome === "other" ? v.other_outcome! : v.outcome).replace("_", " ")})`,
       details: { fields: { Duration: `${duration}s`, Attempt: String(lead.attempt_count + 1), Notes: v.notes?.trim() || "N/A" } },
     },
   ]);

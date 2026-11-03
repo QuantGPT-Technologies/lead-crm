@@ -18,7 +18,7 @@ import {
 const SECTIONS: [Section, string][] = [
   ["client", "Contact details"],
   ["lead", "Interests & source"],
-  ["stage", "Pipeline stage"],
+  ["stage", "University, program & pipeline stage"],
   ["location", "Location"],
   ["professional", "Education & work"],
   ["internals", "Team & ownership"],
@@ -77,7 +77,7 @@ export function NewLeadForm({
               />
             </>
           ) : (
-            <details className="group">
+            <details className="group" open={section === "stage"}>
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
                 <span className="text-sm font-semibold">{title}</span>
                 <span className="text-xs text-muted group-open:hidden">

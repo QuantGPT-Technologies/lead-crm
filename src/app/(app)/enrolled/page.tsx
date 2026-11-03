@@ -1,6 +1,9 @@
+import { TableSort } from "@/components/table-sort";
+import { tableSort } from "@/lib/view-filters";
+import { DateFilter } from "@/components/date-filter";
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
-import { Card, Empty, PageHeader, Pager, btn } from "@/components/ui";
+import { Card, Empty, PageHeader, Pager } from "@/components/ui";
 import { dateRange, fmtDate, fmtMoney, one, type SearchParams } from "@/lib/utils";
 import { PaymentCell } from "./payment-cell";
 
@@ -8,6 +11,7 @@ const SIZE = 50;
 
 export default async function EnrolledPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
+  const sort = tableSort(one(sp.sort), one(sp.dir), ["enrolled_on", "fee_amount", "paid_amount", "enrollment_no"], "enrolled_on");
   const { supabase } = await getSession();
   const page = Math.max(1, Number(one(sp.page)) || 1);
   const range = dateRange(one(sp.from), one(sp.to), 365);
@@ -18,7 +22,7 @@ export default async function EnrolledPage({ searchParams }: { searchParams: Sea
       .select("id, enrollment_no, fee_amount, paid_amount, enrolled_on, lead:leads(id, student_name, mobile), university:universities(name), course:courses(name), creator:profiles(full_name)", { count: "exact" })
       .gte("enrolled_on", range.fromStr)
       .lte("enrolled_on", range.toStr)
-      .order("enrolled_on", { ascending: false })
+      .order(sort.column, { ascending: sort.ascending, nullsFirst: false }).order("id", { ascending: sort.ascending })
       .range((page - 1) * SIZE, page * SIZE - 1),
     supabase.rpc("enrollment_totals", { p_from: range.fromStr, p_to: range.toStr }),
   ]);
@@ -30,14 +34,10 @@ export default async function EnrolledPage({ searchParams }: { searchParams: Sea
   return (
     <>
       <PageHeader title="Enrolled">
-        <form className="flex flex-wrap items-center gap-2">
-          <input type="date" name="from" defaultValue={range.fromStr} aria-label="From date" className="input !h-9 !w-40" />
-          <input type="date" name="to" defaultValue={range.toStr} aria-label="To date" className="input !h-9 !w-40" />
-          <button type="submit" className={btn("outline")}>
-            Apply
-          </button>
-        </form>
+
       </PageHeader>
+      <DateFilter label="Enrolled dates" allowAll={false} defaults={{ from: range.fromStr, to: range.toStr }} />
+      <TableSort defaultSort="enrolled_on" options={[{ value: "enrolled_on", label: "Enrolled on" }, { value: "fee_amount", label: "Fee" }, { value: "paid_amount", label: "Paid" }, { value: "enrollment_no", label: "Enrolment no." }]} />
 
       <div className="mb-3 grid gap-3 sm:grid-cols-4">
         {[["Enrolments", String(count ?? 0)], ["Total fee", fmtMoney(fee)], ["Collected", fmtMoney(paid)], ["Outstanding", fmtMoney(fee - paid)]].map(([label, value]) => (
@@ -86,7 +86,7 @@ export default async function EnrolledPage({ searchParams }: { searchParams: Sea
           </tbody>
         </table>
         {rows.length === 0 && <Empty>No enrolments in this period. Mark a lead as enrolled from its page (graduation-cap icon).</Empty>}
-        <Pager page={page} size={SIZE} total={count ?? 0} params={{ from: range.fromStr, to: range.toStr }} path="/enrolled" />
+        <Pager page={page} size={SIZE} total={count ?? 0} params={{ from: range.fromStr, to: range.toStr, sort: sort.column, dir: sort.ascending ? "asc" : "desc" }} path="/enrolled" />
       </Card>
     </>
   );

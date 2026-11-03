@@ -31,7 +31,7 @@ export function CategorySwitcher({
         return (
           <Link
             key={view.value}
-            href={params.size ? `${path}?${params}` : path}
+            href={params.size ? `${path}?${params}` : `${path}?view=all`}
             scroll={false}
             aria-current={selected ? "page" : undefined}
             className={cn(

@@ -5,7 +5,6 @@ import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowUpRight,
-  Bell,
   ChevronDown,
   LogOut,
   Menu,
@@ -16,6 +15,7 @@ import {
 } from "lucide-react";
 import { signOut } from "@/app/login/actions";
 import { BrandLogo } from "@/components/brand-logo";
+import { Notifications } from "@/components/notifications";
 const PushRegister = dynamic(
   () => import("@/components/push-register").then((module) => module.PushRegister),
   { ssr: false },
@@ -24,12 +24,10 @@ export function Topbar({
   pages,
   user,
   company,
-  dueFollowups,
 }: {
   pages: { label: string; href: string }[];
-  user: { name: string; code: string; role: string };
+  user: { id: string; name: string; code: string; role: string };
   company: string;
-  dueFollowups: number;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -191,16 +189,7 @@ export function Topbar({
         )}
       </form>
       <div className="ml-auto flex shrink-0 items-center gap-2 lg:ml-0">
-        <Link
-          href="/followups"
-          aria-label={`${dueFollowups} follow-ups due`}
-          className="relative flex h-9 w-9 items-center justify-center rounded-xl hover:bg-soft"
-        >
-          <Bell size={18} strokeWidth={1.7} />
-          {dueFollowups > 0 && (
-            <span className="absolute right-1 top-1 h-2 w-2 rounded-full border-2 border-bg bg-amber-600" />
-          )}
-        </Link>
+        <Notifications key={user.id} userId={user.id} />
         <button
           type="button"
           onClick={toggleTheme}

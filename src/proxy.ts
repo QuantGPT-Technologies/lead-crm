@@ -1,8 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { env, isSupabaseConfigured } from "@/lib/env";
+import { TAB_COOKIE } from "@/lib/tab-session-constants";
 
-const PUBLIC = ["/login", "/setup", "/api/cron"];
+const PUBLIC = ["/login", "/setup", "/api/cron", "/api/session"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -19,7 +20,10 @@ export async function proxy(request: NextRequest) {
       setAll: (list) => {
         list.forEach(({ name, value }) => request.cookies.set(name, value));
         response = NextResponse.next({ request });
-        list.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+        list.forEach(({ name, value, options }) => response.cookies.set(name, value, {
+          ...options,
+          ...(options.maxAge === 0 ? {} : { maxAge: undefined, expires: undefined }),
+        }));
       },
     },
   });
@@ -28,7 +32,7 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  let signedIn = !!user;
+  let signedIn = !!user && request.cookies.has(TAB_COOKIE);
   if (user) {
     const { data: role, error } = await supabase.rpc("app_role");
     if (error || !role) {
@@ -52,7 +56,7 @@ export async function proxy(request: NextRequest) {
     if (pathname !== "/") url.searchParams.set("next", pathname);
     return redirectWithCookies(url);
   }
-  if (signedIn && pathname === "/login") {
+  if (signedIn && pathname === "/login" && request.nextUrl.searchParams.get("fresh") !== "1") {
     return redirectWithCookies(new URL("/dashboard", request.url));
   }
   return response;

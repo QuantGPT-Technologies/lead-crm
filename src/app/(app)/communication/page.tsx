@@ -1,3 +1,7 @@
+import { TableSort } from "@/components/table-sort";
+import { tableSort } from "@/lib/view-filters";
+import { DateFilter } from "@/components/date-filter";
+import { filterDates, viewHref } from "@/lib/view-filters";
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import { emailProviderConfigured } from "@/lib/messaging";
@@ -10,6 +14,8 @@ const STATUS_COLOR: Record<string, string> = { sent: "#16a34a", failed: "#dc2626
 
 export default async function CommunicationPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
+  const sort = tableSort(one(sp.sort), one(sp.dir), ["created_at", "channel", "status", "recipient"], "created_at");
+  const from = one(sp.from), to = one(sp.to);
   const { supabase } = await getSession();
   const page = Math.max(1, Number(one(sp.page)) || 1);
   const channel = CHANNELS.includes(one(sp.channel) ?? "") ? one(sp.channel)! : "";
@@ -17,9 +23,10 @@ export default async function CommunicationPage({ searchParams }: { searchParams
   let q = supabase
     .from("messages")
     .select("id, channel, recipient, subject, body, status, error, created_at, lead:leads(id, student_name), sender:profiles(full_name)", { count: "exact" })
-    .order("created_at", { ascending: false })
+    .order(sort.column, { ascending: sort.ascending, nullsFirst: false }).order("id", { ascending: sort.ascending })
     .range((page - 1) * SIZE, page * SIZE - 1);
   if (channel) q = q.eq("channel", channel);
+  q = filterDates(q, from, to, "created_at");
   const { data, count, error } = await q;
   const rows = (data ?? []) as unknown as Record<string, unknown>[];
 
@@ -27,11 +34,13 @@ export default async function CommunicationPage({ searchParams }: { searchParams
     <>
       <PageHeader title="Message Log">
         {["", ...CHANNELS].map((c) => (
-          <Link key={c} href={`/communication${c ? `?channel=${c}` : ""}`} className={btn(c === channel ? "primary" : "outline", "capitalize")}>
+          <Link key={c} href={viewHref("/communication", { channel: c, from, to, sort: sort.column, dir: sort.ascending ? "asc" : "desc" })} className={btn(c === channel ? "primary" : "outline", "capitalize")}>
             {c || "All"}
           </Link>
         ))}
       </PageHeader>
+      <DateFilter label="Message dates" />
+      <TableSort defaultSort="created_at" options={[{ value: "created_at", label: "When" }, { value: "channel", label: "Channel" }, { value: "status", label: "Status" }, { value: "recipient", label: "Recipient" }]} />
 
       {!emailProviderConfigured() && (
         <Card className="mb-3 p-3 text-sm text-muted">
@@ -74,7 +83,7 @@ export default async function CommunicationPage({ searchParams }: { searchParams
           </tbody>
         </table>
         {rows.length === 0 && <Empty>No messages yet. Compose one from a lead&apos;s page.</Empty>}
-        <Pager page={page} size={SIZE} total={count ?? 0} params={{ channel }} path="/communication" />
+        <Pager page={page} size={SIZE} total={count ?? 0} params={{ channel, from, to, sort: sort.column, dir: sort.ascending ? "asc" : "desc" }} path="/communication" />
       </Card>
     </>
   );

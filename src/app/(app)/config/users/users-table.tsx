@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { KeyRound, Pencil, Plus } from "lucide-react";
+import { KeyRound, Mail, Pencil, Plus } from "lucide-react";
 import { Badge, Button, Card, Field, Modal, Select } from "@/components/ui";
 import { notify } from "@/components/toast";
 import type { Profile } from "@/lib/types";
-import { createUser, resetUserPassword, updateUser } from "../../ops-actions";
+import { createUser, resetUserPassword, sendUserPasswordSetup, updateUser } from "../../ops-actions";
 
 const ROLES = [
   { value: "agent", label: "Agent - sees only their own leads" },
@@ -16,12 +16,14 @@ const ROLE_COLOR: Record<string, string> = { admin: "#c026d3", manager: "#0284c7
 
 type Dialog = { kind: "new" } | { kind: "edit"; user: Profile } | { kind: "password"; user: Profile };
 
-export function UsersTable({ users, selfId }: { users: Profile[]; selfId: string }) {
+export function UsersTable({ users, selfId, directory = users }: { users: Profile[]; selfId: string; directory?: Profile[] }) {
+  const [sort, setSort] = useState({ key: "full_name", asc: true });
+  const ordered = [...users].sort((a, b) => String(a[sort.key as keyof Profile] ?? "").localeCompare(String(b[sort.key as keyof Profile] ?? ""), undefined, { numeric: true }) * (sort.asc ? 1 : -1));
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [selectedRole, setSelectedRole] = useState("agent");
   const [pending, start] = useTransition();
-  const managers = users.filter((u) => u.is_active && u.role !== "agent").map((u) => ({ value: u.id, label: u.full_name }));
-  const nameOf = (id: string | null) => users.find((u) => u.id === id)?.full_name ?? "";
+  const managers = directory.filter((u) => u.is_active && u.role !== "agent").map((u) => ({ value: u.id, label: u.full_name }));
+  const nameOf = (id: string | null) => directory.find((u) => u.id === id)?.full_name ?? "";
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -33,9 +35,9 @@ export function UsersTable({ users, selfId }: { users: Profile[]; selfId: string
         dialog.kind === "new"
           ? await createUser({ full_name: s("full_name"), email: s("email"), password: s("password"), role: s("role"), manager_id: s("manager_id"), phone: s("phone") })
           : dialog.kind === "edit"
-              ? await updateUser(dialog.user.id, { full_name: s("full_name"), email: s("email"), role: s("role"), manager_id: s("manager_id"), phone: s("phone"), is_active: f.get("is_active") === "on" })
+                ? await updateUser(dialog.user.id, { full_name: s("full_name"), email: s("email"), role: s("role"), manager_id: s("manager_id"), phone: s("phone"), is_active: f.get("is_active") === "on", send_setup_email: f.get("send_setup_email") === "on" })
             : await resetUserPassword(dialog.user.id, s("password"));
-      if (notify(res)) setDialog(null);
+        if (notify(res) || ("saved" in res && res.saved)) setDialog(null);
     });
   }
 
@@ -49,13 +51,14 @@ export function UsersTable({ users, selfId }: { users: Profile[]; selfId: string
           <Plus size={15} /> Add team member
         </Button>
       </div>
+      <div className="flex gap-2 p-3"><select aria-label="Sort team members" value={sort.key} onChange={event => setSort({ ...sort, key: event.target.value })} className="input !w-auto">{[["full_name","Name"],["email","Email"],["role","Role"],["emp_code","Employee ID"]].map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select><button type="button" className="text-xs" onClick={() => setSort({ ...sort, asc: !sort.asc })}>{sort.asc ? "Ascending ?" : "Descending ?"}</button></div>
       <div className="overflow-x-auto">
         <table className="table-grid w-full border-collapse">
           <thead>
             <tr>{["User ID", "Name", "Email", "Phone", "Role", "Reports to", "Status", ""].map((h) => <th key={h}>{h}</th>)}</tr>
           </thead>
           <tbody>
-            {users.map((u) => (
+            {ordered.map((u) => (
               <tr key={u.id}>
                 <td className="font-mono">{u.emp_code}</td>
                 <td className="font-semibold">{u.full_name}</td>
@@ -69,6 +72,11 @@ export function UsersTable({ users, selfId }: { users: Profile[]; selfId: string
                   <Badge color={u.is_active ? "#16a34a" : "#dc2626"}>{u.is_active ? "Active" : "Deactivated"}</Badge>
                 </td>
                 <td className="text-right">
+                    <Button variant="ghost" className="h-8" disabled={pending || !u.is_active}
+                      title={`Send password setup email to ${u.email}`} aria-label={`Send password setup email to ${u.full_name}`}
+                      onClick={() => start(async () => { notify(await sendUserPasswordSetup(u.id)); })}>
+                      <Mail size={14} />
+                    </Button>
                     <Button variant="ghost" className="h-8" aria-label={`Edit ${u.full_name}`} onClick={() => { setSelectedRole(u.role); setDialog({ kind: "edit", user: u }); }}>
                     <Pencil size={14} />
                   </Button>
@@ -103,6 +111,12 @@ export function UsersTable({ users, selfId }: { users: Profile[]; selfId: string
                   <Select name="manager_id" defaultValue={editing?.manager_id ?? ""} options={managers.filter((m) => m.value !== editing?.id)} placeholder="Nobody" />
                 </Field>
                 {editing && (
+                    <label className="flex items-start gap-2 text-sm">
+                      <input type="checkbox" name="send_setup_email" defaultChecked className="mt-1" />
+                      <span>Send a password setup email to the new address if the login email changes (active members only).</span>
+                    </label>
+                  )}
+                  {editing && (
                   <label className="flex items-center gap-2 font-semibold">
                     <input type="checkbox" name="is_active" defaultChecked={editing.is_active} disabled={editing.id === selfId} />
                     Active (can sign in){editing.id === selfId && <input type="hidden" name="is_active" value="on" />}

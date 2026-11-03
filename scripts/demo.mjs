@@ -89,7 +89,16 @@ await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-005-lead-meetin
 await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-006-firebase-agent-login.sql"), "utf8"));
 await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-007-email-login.sql"), "utf8"));
 await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-008-team-access.sql"), "utf8"));
+await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-009-ut-category.sql"), "utf8"));
+await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-010-universities.sql"), "utf8"));
+await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-011-programs.sql"), "utf8"));
 await configureLocalKanban(db, { once: true });
+await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-012-workflow-reports.sql"), "utf8"));
+await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-013-report-performance.sql"), "utf8"));
+if (firstRun) {
+  await db.query("update public.stages set is_active=true where lower(name)='other'");
+  await db.query("update public.sub_stages set is_active=true where lower(name)='other'");
+}
 
 async function seed() {
   const one = async (sql, params) => (await db.query(sql, params)).rows[0];
@@ -104,11 +113,11 @@ async function seed() {
   const agents = [await user("Arjun Agent", "arjun@demo.test", "agent", manager), await user("Bela Agent", "bela@demo.test", "agent", manager), await user("Chetan Agent", "chetan@demo.test", "agent", manager)];
   await db.query("select set_global_login($1, $2)", [GLOBAL_EMAIL, PASSWORD]);
 
-  const sources = await all("select id from lead_sources order by name");
+  const sources = await all("select id from lead_sources where lower(name)<>'other' order by name");
   const stages = Object.fromEntries((await all("select id, name from stages")).map((s) => [s.name, s.id]));
   const subs = await all("select id, stage_id from sub_stages order by sort_order");
-  const uni = (await one("select id from universities limit 1")).id;
-  const courses = await all("select id, name, fee from courses order by name");
+  const uni = (await one("select id from universities where name='Sample University' limit 1")).id;
+  const courses = await all("select id, name, fee from courses where university_id=$1 and lower(name)<>'other' order by name", [uni]);
   const first = ["Aarav", "Diya", "Kabir", "Isha", "Rohan", "Sneha", "Vikram", "Tara", "Nikhil", "Pooja", "Farhan", "Leela", "Sameer", "Anika", "Dev", "Mira"];
   const last = ["Sharma", "Verma", "Nair", "Khan", "Patel", "Iyer", "Singh", "Das", "Mehta", "Joshi", "Gupta"];
   const cities = [["Delhi", "Delhi"], ["Mumbai", "Maharashtra"], ["Pune", "Maharashtra"], ["Bengaluru", "Karnataka"], ["Jaipur", "Rajasthan"], ["Lucknow", "Uttar Pradesh"]];
@@ -349,8 +358,9 @@ console.log(`
   ${PRODUCTION ? "Optimized demo" : "Development demo"} is starting at  http://localhost:${APP_PORT}
 
   Step 1  Global Sign In   ${GLOBAL_EMAIL}  /  ${PASSWORD}
-  Step 2  User Login       EA00000001 (admin)  /  ${PASSWORD}
-          also: EA00000002 manager, EA00000003-5 agents (same password)
+  Step 2  User Login       admin@demo.test  /  ${PASSWORD}
+          also: manager@demo.test, arjun@demo.test, bela@demo.test,
+                chetan@demo.test (same password)
 
   Press Ctrl+C to stop. Data is kept in .demo/ (npm run demo -- --reset to wipe).
 `);

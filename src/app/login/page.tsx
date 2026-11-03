@@ -80,7 +80,9 @@ export default async function LoginPage({
             initialStep={globalDone ? "user" : "global"}
             next={destination}
             notice={
-              one(sp.error) === "inactive"
+              one(sp.fresh) === "1"
+                ? "Sign in again to open the CRM in this tab."
+                : one(sp.error) === "inactive"
                 ? "Your account is not active. Contact your administrator."
                 : undefined
             }

@@ -4,13 +4,15 @@ import { redirect } from "next/navigation";
 import { requireGlobalLogin, requireOtp } from "@/lib/env";
 import { clearSigned, readSigned, setSigned } from "@/lib/signed-cookie";
 import { createAdminClient, createClient, createStatelessClient } from "@/lib/supabase/server";
+import { startTabSession } from "@/lib/tab-session";
+import { TAB_COOKIE } from "@/lib/tab-session-constants";
 
 const GLOBAL = "crm_global";
 const PENDING = "crm_otp";
 const INVALID = "Invalid email or password";
 const PHONE_PENDING = "crm_phone_challenge";
 
-type StepResult = { error?: string; step?: "user" | "otp" | "done"; name?: string };
+type StepResult = { error?: string; step?: "user" | "otp" | "done"; name?: string; tabKey?: string };
 
 export async function globalLogin(email: string, password: string): Promise<StepResult> {
   if (!email || !password) return { error: "Enter email and password" };
@@ -41,10 +43,11 @@ export async function userLogin(userId: string, password: string): Promise<StepR
 
     if (!requireOtp()) {
       const supabase = await createClient();
-      const { error } = await supabase.auth.signInWithPassword({ email: profile.email, password });
-      if (error) return { error: INVALID };
+      const { data, error } = await supabase.auth.signInWithPassword({ email: profile.email, password });
+      if (error || !data.session || !data.user) return { error: INVALID };
+      const tabKey = await startTabSession(data.user.id, data.session.access_token);
       await clearSigned(GLOBAL);
-      return { step: "done" };
+      return { step: "done", tabKey };
     }
 
     // OTP flow: check the password without creating a browser session, then email a code.
@@ -71,14 +74,15 @@ export async function verifyOtp(code: string): Promise<StepResult> {
   if (!/^\d{6,8}$/.test(token)) return { error: "Enter the numeric OTP from your email" };
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.verifyOtp({ email: pending.email, token, type: "email" });
-  if (error) return { error: "Incorrect or expired OTP" };
+  const { data, error } = await supabase.auth.verifyOtp({ email: pending.email, token, type: "email" });
+  if (error || !data.session || !data.user) return { error: "Incorrect or expired OTP" };
+  const tabKey = await startTabSession(data.user.id, data.session.access_token);
   await clearSigned(GLOBAL, PENDING);
-  return { step: "done" };
+  return { step: "done", tabKey };
 }
 
 export async function resetLogin() {
-  await clearSigned(GLOBAL, PENDING, PHONE_PENDING);
+  await clearSigned(GLOBAL, PENDING, PHONE_PENDING, TAB_COOKIE);
 }
 
 export async function requestPasswordSetup(email: string): Promise<{ error?: string; message?: string }> {
@@ -98,6 +102,6 @@ export async function requestPasswordSetup(email: string): Promise<{ error?: str
 export async function signOut() {
   const supabase = await createClient();
   await supabase.auth.signOut({ scope: "local" });
-  await clearSigned(GLOBAL, PENDING, PHONE_PENDING);
+  await clearSigned(GLOBAL, PENDING, PHONE_PENDING, TAB_COOKIE);
   redirect("/login");
 }

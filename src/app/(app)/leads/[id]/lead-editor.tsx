@@ -1,4 +1,6 @@
 "use client";
+import { DateFilter } from "@/components/date-filter";
+
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
@@ -96,6 +98,7 @@ const ACTIVITY_COLOR: Record<string, string> = {
 };
 
 export interface EditorProps {
+  returnTo: string;
   lead: Lead;
   lookups: Lookups;
   me: { id: string; name: string; role: Role };
@@ -141,11 +144,12 @@ export function LeadEditor(p: EditorProps) {
   return (
     <div className="space-y-5">
       <Link
-        href="/leads"
+        href={p.returnTo}
         className="inline-flex items-center gap-2 text-xs text-muted hover:text-brand"
       >
         <ArrowLeft size={14} /> All leads
       </Link>
+      <DateFilter label="History dates" />
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <span className="lead-avatar !h-14 !w-14 !rounded-2xl !text-lg">
@@ -159,7 +163,7 @@ export function LeadEditor(p: EditorProps) {
             <p className="eyebrow mb-1">{lead.lead_no}</p>
             <h1 className="text-[28px] font-semibold">{lead.student_name}</h1>
             <p className="mt-1 text-xs text-muted">
-              {name(lookups.courses, lead.course_id) ||
+              {(lead.other_fields?.course_id || name(lookups.courses, lead.course_id)) ||
                 "Exploring possibilities"}{" "}
               · {name(lookups.users, lead.owner_id) || "Unassigned"}
             </p>
@@ -227,8 +231,8 @@ export function LeadEditor(p: EditorProps) {
                 </button>
               ))}
             </div>
-            <NavArrow id={p.prevId} label="Newer lead" icon={ChevronLeft} />
-            <NavArrow id={p.nextId} label="Older lead" icon={ChevronRight} />
+            <NavArrow returnTo={p.returnTo} id={p.prevId} label="Previous lead" icon={ChevronLeft} />
+            <NavArrow returnTo={p.returnTo} id={p.nextId} label="Next lead" icon={ChevronRight} />
           </div>
 
           <div className="mt-3">
@@ -256,10 +260,11 @@ export function LeadEditor(p: EditorProps) {
                     [
                       Send,
                       "Source Desc",
-                      lead.source_desc || name(lookups.sources, lead.source_id),
+                      lead.source_desc || (lead.other_fields?.source_id || name(lookups.sources, lead.source_id)),
                     ],
                     [History, "Allot On", fmtDateTime(lead.allotted_at)],
                     [PhoneCall, "Attempts", String(lead.attempt_count)],
+                    [PhoneCall, "Total calls", String(lead.total_calls ?? p.calls.length)],
                   ]}
                 />
                 <InfoCard
@@ -268,21 +273,22 @@ export function LeadEditor(p: EditorProps) {
                     [
                       Building2,
                       "University",
-                      name(lookups.universities, lead.university_id),
+                      (lead.other_fields?.university_id || name(lookups.universities, lead.university_id)),
                     ],
                     [
                       GraduationCap,
                       "Course",
-                      name(lookups.courses, lead.course_id),
+                      (lead.other_fields?.course_id || name(lookups.courses, lead.course_id)),
                     ],
                     [MapPin, "City", lead.city ?? ""],
                     [
                       ActivityIcon,
                       "Stage Desc",
-                      [stage?.name, name(lookups.subStages, lead.sub_stage_id)]
+                      [lead.other_fields?.stage_id || stage?.name, (lead.other_fields?.sub_stage_id || name(lookups.subStages, lead.sub_stage_id))]
                         .filter(Boolean)
                         .join(" / "),
                     ],
+                    [History, "Last attempt", fmtDateTime(lead.last_attempt_at)],
                     [
                       CalendarDays,
                       "Next Followup",
@@ -365,7 +371,9 @@ export function LeadEditor(p: EditorProps) {
               {feed === "productivity" && (
                 <div className="space-y-4 pt-4">
                   <div className="grid grid-cols-3 gap-2 text-center">
-                    <Stat label="Call attempts" value={lead.attempt_count} />
+                    <Stat label="Attempts" value={lead.attempt_count} />
+                    <Stat label="Total calls" value={lead.total_calls ?? p.calls.length} />
+                    <Stat label="Last attempt" value={fmtDateTime(lead.last_attempt_at) || "Not attempted"} />
                     <Stat
                       label="Connected calls"
                       value={
@@ -541,7 +549,7 @@ export function LeadEditor(p: EditorProps) {
               fmtDateTime(c.called_at as string),
               rel(c, "user"),
               c.direction as string,
-              String(c.outcome).replace("_", " "),
+              String(c.other_outcome || c.outcome).replace("_", " "),
               `${Math.floor(Number(c.duration_sec) / 60)}m ${Number(c.duration_sec) % 60}s`,
               (c.notes as string) ?? "",
             ])}
@@ -585,17 +593,19 @@ export function LeadEditor(p: EditorProps) {
 }
 
 function NavArrow({
+  returnTo,
   id,
   label,
   icon: Icon,
 }: {
+  returnTo: string;
   id: string | null;
   label: string;
   icon: LucideIcon;
 }) {
   return id ? (
     <Link
-      href={`/leads/${id}`}
+      href={`/leads/${id}?returnTo=${encodeURIComponent(returnTo)}`}
       title={label}
       aria-label={label}
       className={btn("outline", "h-8 !px-2")}

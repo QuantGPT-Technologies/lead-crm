@@ -100,7 +100,7 @@ export function toCsv(rows: Record<string, unknown>[]) {
     if (/^[=+\-@]/.test(s)) s = "'" + s; // stop spreadsheet formula injection
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  return [cols.join(","), ...rows.map((r) => cols.map((c) => cell(r[c])).join(","))].join("\n");
+  return [cols.map(cell).join(","), ...rows.map((r) => cols.map((c) => cell(r[c])).join(","))].join("\n");
 }
 
 export const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || undefined;

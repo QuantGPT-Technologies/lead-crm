@@ -1,3 +1,5 @@
+import { DateFilter } from "@/components/date-filter";
+import { filterDates, viewHref } from "@/lib/view-filters";
 import Link from "next/link";
 import { ArrowUpRight, CalendarClock, Phone, CheckCircle2 } from "lucide-react";
 import { getSession } from "@/lib/auth";
@@ -13,6 +15,7 @@ import {
 import { TaskButtons } from "./task-buttons";
 
 const VIEWS = [
+  ["all", "All pending"],
   ["today", "Today"],
   ["missed", "Missed"],
   ["upcoming", "Upcoming"],
@@ -25,11 +28,12 @@ export default async function FollowupsPage({
   searchParams: SearchParams;
 }) {
   const sp = await searchParams;
+  const from = one(sp.from), to = one(sp.to);
   const { supabase, profile } = await getSession();
   const isStaff = profile.role !== "agent";
   const view = VIEWS.some(([v]) => v === one(sp.view))
     ? one(sp.view)!
-    : "today";
+    : from || to ? "all" : "today";
   // staff can look at one person's follow-ups or everyone's ("all"); agents only see their own
   const who = isStaff ? (one(sp.user) ?? profile.id) : profile.id;
   const { start, end } = todayBounds();
@@ -51,18 +55,19 @@ export default async function FollowupsPage({
     if (view === "missed") q = q.lt("due_at", start.toISOString());
     if (view === "upcoming") q = q.gte("due_at", end.toISOString());
   }
+  q = filterDates(q, from, to, view === "done" ? "completed_at" : "due_at");
   const { data, error } = await q;
   const rows = (data ?? []) as unknown as Record<string, unknown>[];
   const users = isStaff ? (await getLookups()).users : [];
   const href = (v: string) =>
-    `/followups?view=${v}${isStaff ? `&user=${who}` : ""}`;
+    viewHref("/followups", { view: v, user: isStaff ? who : undefined, from, to });
 
   return (
     <>
       <PageHeader title="Followups">
         {isStaff && (
           <form className="flex gap-2">
-            <input type="hidden" name="view" value={view} />
+            <input type="hidden" name="view" value={view} /><input type="hidden" name="from" value={from ?? ""} /><input type="hidden" name="to" value={to ?? ""} />
             <Select
               name="user"
               defaultValue={who}
@@ -91,6 +96,7 @@ export default async function FollowupsPage({
           ))}
         </div>
       </PageHeader>
+      <DateFilter label={view === "done" ? "Completed dates" : "Follow-up due dates"} />
 
       <div className="mb-4 flex items-center justify-between">
         <p className="text-sm font-semibold">

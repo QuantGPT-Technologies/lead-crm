@@ -5,7 +5,7 @@ import { ExternalLink } from "lucide-react";
 import { Badge, Button, Card, Field, Select, btn } from "@/components/ui";
 import { notify, toast } from "@/components/toast";
 import type { ActionResult, Lead, Lookups, Role, Row } from "@/lib/types";
-import { fmtDate, fmtMoney, renderTemplate, tzDateString } from "@/lib/utils";
+import { fmtDate, fmtDateTime, fmtMoney, renderTemplate, tzDateString } from "@/lib/utils";
 import {
   addNote,
   addTask,
@@ -45,6 +45,7 @@ const OUTCOMES = [
   ["switched_off", "Switched off"],
   ["callback", "Asked to call back"],
   ["wrong_number", "Wrong number"],
+  ["other", "Other"],
 ].map(([value, label]) => ({ value, label }));
 
 /** International number for wa.me links; 10-digit numbers are assumed to be Indian. */
@@ -89,6 +90,7 @@ function PanelBody({
     null,
   );
   const isStaff = me.role !== "agent";
+  const [callOutcome, setCallOutcome] = useState("");
 
   /** Runs a server action from a form and clears the form when it worked. */
   const submit =
@@ -220,6 +222,7 @@ function PanelBody({
         onSubmit={submit((f) =>
           logCall(lead.id, {
             outcome: str(f, "outcome"),
+            other_outcome: str(f, "other_outcome"),
             direction: str(f, "direction"),
             duration_sec: Number(str(f, "min")) * 60 + Number(str(f, "sec")),
             notes: str(f, "notes"),
@@ -232,7 +235,8 @@ function PanelBody({
         </a>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Outcome" required>
-            <Select name="outcome" required options={OUTCOMES} />
+            <Select name="outcome" required options={OUTCOMES} onChange={event => setCallOutcome(event.target.value)} />
+            {callOutcome === "other" && <input name="other_outcome" aria-label="Other call outcome" placeholder="Specify call outcome" required maxLength={200} className="input mt-2" />}
           </Field>
           <Field label="Direction">
             <Select
@@ -268,6 +272,7 @@ function PanelBody({
         <Field label="Notes">
           <textarea name="notes" rows={3} className="input" />
         </Field>
+        <p className="text-xs text-muted">Last attempt: {fmtDateTime(lead.last_attempt_at) || "Not attempted"}</p>
         <Field label="Next follow-up (optional)">
           <input name="followup_at" type="datetime-local" className="input" />
         </Field>

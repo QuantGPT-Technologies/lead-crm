@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { globalLogin, requestPasswordSetup, resetLogin, userLogin, verifyOtp } from "./actions";
+import { TAB_STORAGE } from "@/lib/tab-session-constants";
 
 type Step = "global" | "user" | "otp";
 
@@ -73,7 +74,15 @@ export function LoginFlow({
             ? await userLogin(get("userId"), get("password"))
             : await verifyOtp(get("otp"));
       if (res.error) return setError(res.error);
-      if (res.step === "done") return window.location.assign(next);
+      if (res.step === "done") {
+        if (!res.tabKey) return setError("Could not start this tab's session. Please sign in again.");
+        try { sessionStorage.setItem(TAB_STORAGE, res.tabKey); }
+        catch {
+          await fetch("/api/session/close", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: res.tabKey }) });
+          return setError("Allow session storage in your browser to sign in.");
+        }
+        return window.location.assign(next);
+      }
       if (res.name) setName(res.name);
       if (res.step) setStep(res.step);
       setShow(false);

@@ -3,6 +3,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import type { Profile, Role } from "@/lib/types";
+import { readTabSession } from "@/lib/tab-session";
 
 /** Signed-in user + profile for the current request. Redirects to /login when there is none. */
 export const getSession = cache(async () => {
@@ -11,6 +12,8 @@ export const getSession = cache(async () => {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session || !(await readTabSession(user.id, session.access_token))) redirect("/login?fresh=1");
 
   // Signed-in users can only read colleagues' names and roles from `profiles`; the full row
   // (email, phone) of the verified user is read with the service role.

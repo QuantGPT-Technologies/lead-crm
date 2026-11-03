@@ -12,7 +12,7 @@ const ATTEMPTS = [
   { value: "2", label: "2 attempts" },
   { value: "3+", label: "3 or more" },
 ];
-const PRIORITIES = ["hot", "warm", "cold"].map((p) => ({
+const PRIORITIES = ["hot", "warm", "cold", "other"].map((p) => ({
   value: p,
   label: p[0].toUpperCase() + p.slice(1),
 }));
@@ -45,7 +45,7 @@ export function LeadFilterBar({
   );
 
   function apply(changes: Record<string, string>) {
-    const next = { ...current, ...changes };
+    const next = { ...current, ...changes, page: "1" };
     const sp = new URLSearchParams();
     Object.entries(next).forEach(([k, v]) => v && sp.set(k, v));
     router.push(`${pathname}?${sp}`);
@@ -54,6 +54,7 @@ export function LeadFilterBar({
   const clear = () => {
     const sp = new URLSearchParams();
     KEEP.forEach((k) => current[k] && sp.set(k, current[k]!));
+    if (!sp.size) sp.set("view", "all");
     router.push(`${pathname}?${sp}`);
   };
 
@@ -101,6 +102,7 @@ export function LeadFilterBar({
       </form>
       {quick("stage", "Stage", opts(lookups.stages))}
       {quick("source", "Source", opts(lookups.sources))}
+      {quick("churn", "Rechurn", [{ value: "yes", label: "Rechurned leads" }, { value: "no", label: "Never rechurned" }])}
       <Button
         variant="outline"
         onClick={() => setOpen((o) => !o)}
@@ -185,7 +187,7 @@ export function LeadFilterBar({
               placeholder="All"
             />
           </Field>
-          <Field label="Created from">
+          <Field label="From date">
             <input
               type="date"
               name="from"
@@ -193,7 +195,7 @@ export function LeadFilterBar({
               className="input"
             />
           </Field>
-          <Field label="Created to">
+          <Field label="To date">
             <input
               type="date"
               name="to"

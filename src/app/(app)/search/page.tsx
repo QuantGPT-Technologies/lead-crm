@@ -1,3 +1,4 @@
+import { DateFilter } from "@/components/date-filter";
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import { applyLeadFilters, getSetting } from "@/lib/data";
@@ -5,7 +6,9 @@ import { Badge, Card, Empty, PageHeader, btn } from "@/components/ui";
 import { cleanSearch, fmtDate, maskEmail, maskMobile, one, type SearchParams } from "@/lib/utils";
 
 export default async function SearchPage({ searchParams }: { searchParams: SearchParams }) {
-  const q = cleanSearch(one((await searchParams).q) ?? "");
+  const sp = await searchParams;
+  const q = cleanSearch(one(sp.q) ?? "");
+  const from = one(sp.from), to = one(sp.to);
   const { supabase, profile } = await getSession();
   // same rule as the lead list: contacts are hidden from everyone but admins while the setting is on
   const masked = profile.role !== "admin" && (await getSetting(supabase, "mask_contacts_in_list", true));
@@ -14,7 +17,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
     q.length >= 3
       ? await applyLeadFilters(
           supabase.from("leads").select("id, lead_no, student_name, mobile, email, created_at, stage:stages(name, color), owner:profiles!leads_owner_id_fkey(full_name)"),
-          { q },
+          { q, from, to },
         )
           .order("created_at", { ascending: false })
           .limit(50)
@@ -23,9 +26,9 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
 
   return (
     <>
-      <PageHeader title="Search Lead" />
+      <PageHeader title="Search Lead" /><DateFilter label="Lead creation dates" />
       <Card className="p-4">
-        <form className="flex flex-wrap gap-2">
+        <form className="flex flex-wrap gap-2"><input type="hidden" name="from" value={from ?? ""} /><input type="hidden" name="to" value={to ?? ""} />
           <input name="q" defaultValue={q} autoFocus required minLength={3} placeholder="Name, mobile, email or lead number (min 3 characters)" aria-label="Search leads" className="input max-w-xl flex-1" />
           <button type="submit" className={btn()}>
             Search

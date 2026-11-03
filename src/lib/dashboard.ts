@@ -6,12 +6,14 @@ export interface DashboardCounts {
   enrolledNow: number; enrolledPrev: number; dueToday: number; missed: number;
 }
 let batchUnavailableUntil = 0;
-export async function getDashboardCounts(supabase: SupabaseClient, userId: string, today: Date, tomorrow: Date): Promise<DashboardCounts> {
-  const result = Date.now() < batchUnavailableUntil ? null : await supabase.rpc("crm_dashboard_counts", { p_today: today.toISOString(), p_tomorrow: tomorrow.toISOString() });
+export async function getDashboardCounts(supabase: SupabaseClient, userId: string, today: Date, tomorrow: Date, period?: { from: Date; to: Date }): Promise<DashboardCounts> {
+  const result = period || Date.now() < batchUnavailableUntil ? null : await supabase.rpc("crm_dashboard_counts", { p_today: today.toISOString(), p_tomorrow: tomorrow.toISOString() });
   if (result && !result.error && result.data) return result.data as DashboardCounts;
   if (result?.error && !["PGRST202", "42883"].includes(result.error.code)) throw new Error(`Could not load dashboard: ${result.error.message}`);
   if (result?.error) batchUnavailableUntil = Date.now() + 60_000;
-  const week = addDays(tomorrow, -7), previous = addDays(tomorrow, -14);
+  const end = period?.to ?? tomorrow;
+  const week = period?.from ?? addDays(tomorrow, -7);
+  const previous = new Date(week.getTime() - (end.getTime() - week.getTime()));
   const count = async (table: string, column: string, from: Date, to: Date) => {
     const r = await supabase.from(table).select("id", { count: "exact", head: true }).gte(column, from.toISOString()).lt(column, to.toISOString());
     if (r.error) throw new Error(r.error.message);
@@ -23,9 +25,9 @@ export async function getDashboardCounts(supabase: SupabaseClient, userId: strin
     const r = await q; if (r.error) throw new Error(r.error.message); return r.count ?? 0;
   };
   const [leadsNow, leadsPrev, callsNow, callsPrev, enrolledNow, enrolledPrev, dueToday, missed] = await Promise.all([
-    count("leads", "created_at", week, tomorrow), count("leads", "created_at", previous, week),
-    count("call_logs", "called_at", week, tomorrow), count("call_logs", "called_at", previous, week),
-    count("enrollments", "created_at", week, tomorrow), count("enrollments", "created_at", previous, week), tasks(false), tasks(true),
+    count("leads", "created_at", week, end), count("leads", "created_at", previous, week),
+    count("call_logs", "called_at", week, end), count("call_logs", "called_at", previous, week),
+    count("enrollments", "created_at", week, end), count("enrollments", "created_at", previous, week), tasks(false), tasks(true),
   ]);
   return { leadsNow, leadsPrev, callsNow, callsPrev, enrolledNow, enrolledPrev, dueToday, missed };
 }

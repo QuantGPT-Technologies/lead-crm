@@ -49,6 +49,7 @@ export const MASTERS: Record<MasterTable, { label: string; order: string; fields
     fields: [
       { name: "stage_id", label: "Stage", type: "select", ref: "stages", required: true },
       { name: "name", label: "Sub Stage Name", required: true },
+      { name: "color", label: "Colour", type: "color" },
       { name: "sort_order", label: "Order", type: "number" },
     ],
   },

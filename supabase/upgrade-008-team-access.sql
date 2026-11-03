@@ -24,6 +24,7 @@ alter policy leads_update on public.leads using(public.can_access_lead(owner_id)
   with check(public.can_access_lead(owner_id));
 
 -- A definer helper avoids recursive profile RLS while returning no private profile data.
+
 create or replace function public.can_access_profile(p_id uuid) returns boolean
 language sql stable security definer set search_path=public as $$
   select case public.app_role()
@@ -33,6 +34,7 @@ language sql stable security definer set search_path=public as $$
     when 'agent' then p_id=(select auth.uid())
     else false end
 $$;
+  
 revoke all on function public.can_access_profile(uuid) from public,anon;
 grant execute on function public.can_access_profile(uuid) to authenticated,service_role;
 alter policy profiles_read on public.profiles using(

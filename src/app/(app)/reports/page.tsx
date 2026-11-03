@@ -1,92 +1,40 @@
 import Link from "next/link";
-import { Download } from "lucide-react";
 import { requireRole } from "@/lib/auth";
-import { Card, Empty, PageHeader, btn } from "@/components/ui";
-import { dateRange, one, toCsv, type SearchParams } from "@/lib/utils";
-
-const DIMENSIONS = [["stage", "Stage"], ["source", "Source"], ["owner", "Lead Owner"], ["university", "University"], ["city", "City"]] as const;
-
-interface ReportRow {
-  label: string; total: number; contacted: number; enrolled: number; lost: number;
-}
-
+import { getLookups } from "@/lib/data";
+import { allReportRows, reportId, reportRange } from "@/lib/report-data";
+import { Card, PageHeader, Select, btn } from "@/components/ui";
+import { DateFilter } from "@/components/date-filter";
+import { ReportTable } from "@/components/report-table";
+import { one, toCsv, type SearchParams } from "@/lib/utils";
+import { viewHref } from "@/lib/view-filters";
+const DIMENSIONS = [["stage", "Status"], ["sub_stage", "Sub-status"], ["source", "Source"], ["attempt", "Attempts"], ["owner", "Employee"], ["university", "University"], ["course", "Program"], ["city", "City"], ["priority", "Priority"], ["category", "Category"], ["rechurn", "Rechurn"]];
+interface Row { label: string; total: number; attempts: number; calls: number; contacted: number; enrolled: number; lost: number; statuses: Record<string, number> }
 export default async function ReportsPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
   const { supabase } = await requireRole("admin", "manager");
-  const dim = DIMENSIONS.some(([d]) => d === one(sp.by)) ? one(sp.by)! : "stage";
-  const range = dateRange(one(sp.from), one(sp.to), 30);
-
-  const { data, error } = await supabase.rpc("report_leads_by", { p_dim: dim, p_from: range.from.toISOString(), p_to: range.to.toISOString() });
-  const rows = ((data ?? []) as ReportRow[]).map((r) => ({ ...r, total: Number(r.total), contacted: Number(r.contacted), enrolled: Number(r.enrolled), lost: Number(r.lost) }));
-  const sum = (k: keyof Omit<ReportRow, "label">) => rows.reduce((s, r) => s + r[k], 0);
-  const pct = (a: number, b: number) => (b ? `${((a / b) * 100).toFixed(1)}%` : "0%");
-  const label = DIMENSIONS.find(([d]) => d === dim)![1];
-  const max = Math.max(1, ...rows.map((r) => r.total));
-  const csv = toCsv(rows.map((r) => ({ [label]: r.label, Leads: r.total, Contacted: r.contacted, Enrolled: r.enrolled, Lost: r.lost, "Conversion %": pct(r.enrolled, r.total) })));
-  const qs = `from=${range.fromStr}&to=${range.toStr}`;
-
-  return (
-    <>
-      <PageHeader title="Lead Reports">
-        <form className="flex flex-wrap items-center gap-2">
-          <input type="hidden" name="by" value={dim} />
-          <input type="date" name="from" defaultValue={range.fromStr} aria-label="From date" className="input !h-9 !w-40" />
-          <input type="date" name="to" defaultValue={range.toStr} aria-label="To date" className="input !h-9 !w-40" />
-          <button type="submit" className={btn("outline")}>
-            Apply
-          </button>
-        </form>
-        {rows.length > 0 && (
-          <a href={`data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`} download={`leads-by-${dim}-${range.fromStr}-to-${range.toStr}.csv`} className={btn("success")}>
-            <Download size={15} /> CSV
-          </a>
-        )}
-      </PageHeader>
-
-      <div className="mb-3 flex flex-wrap gap-2">
-        {DIMENSIONS.map(([d, l]) => (
-          <Link key={d} href={`/reports?by=${d}&${qs}`} className={btn(d === dim ? "primary" : "outline")}>
-            By {l}
-          </Link>
-        ))}
-      </div>
-
-      <Card className="overflow-x-auto">
-        {error && <p className="p-4 text-red-600">{error.message}</p>}
-        <table className="table-grid w-full border-collapse">
-          <thead>
-            <tr>{[label, "Leads created", "", "Contacted", "Enrolled", "Lost", "Conversion"].map((h, i) => <th key={i}>{h}</th>)}</tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.label}>
-                <td className="font-semibold">{r.label}</td>
-                <td>{r.total}</td>
-                <td className="w-1/3">
-                  <div className="h-2.5 rounded bg-brand" style={{ width: `${(r.total / max) * 100}%` }} role="img" aria-label={`${r.total} leads`} />
-                </td>
-                <td>{r.contacted}</td>
-                <td className="font-bold text-emerald-600">{r.enrolled}</td>
-                <td className="text-red-600">{r.lost}</td>
-                <td>{pct(r.enrolled, r.total)}</td>
-              </tr>
-            ))}
-            {rows.length > 0 && (
-              <tr className="font-extrabold">
-                <td>Total</td>
-                <td>{sum("total")}</td>
-                <td />
-                <td>{sum("contacted")}</td>
-                <td>{sum("enrolled")}</td>
-                <td>{sum("lost")}</td>
-                <td>{pct(sum("enrolled"), sum("total"))}</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-        {rows.length === 0 && <Empty>No leads were created in this period.</Empty>}
-      </Card>
-      <p className="mt-2 text-xs text-muted">Counts leads created in the selected period, grouped by their current {label.toLowerCase()}. You only see leads you have access to.</p>
-    </>
-  );
+  const lookups = await getLookups();
+  const range = reportRange(sp);
+  const dim = DIMENSIONS.some(([key]) => key === one(sp.by)) ? one(sp.by)! : "stage";
+  const filters = Object.fromEntries(["owner", "source", "stage", "attempt", "churn"].map(key => [key, one(sp[key])]));
+  const { rows, error } = await allReportRows<Row>(supabase, "crm_lead_report", { p_from: range.from.toISOString(), p_to: range.to.toISOString(), p_dim: dim, p_owner: reportId(filters.owner), p_source: reportId(filters.source), p_stage: reportId(filters.stage), p_attempt: filters.attempt ?? "", p_churn: filters.churn ?? "" });
+  const statuses = [...new Set([...lookups.stages.map(stage => stage.name), ...rows.flatMap(row => Object.keys(row.statuses ?? {}))])];
+  const label = DIMENSIONS.find(([key]) => key === dim)![1];
+  const records: Record<string, string | number>[] = rows.map(row => ({ [label]: row.label, Leads: Number(row.total), Attempts: Number(row.attempts), Calls: Number(row.calls), Contacted: Number(row.contacted), Enrolled: Number(row.enrolled), Lost: Number(row.lost), ...Object.fromEntries(statuses.map(status => [`Status: ${status}`, Number(row.statuses?.[status] ?? 0)])) }));
+  const columns = [label, "Leads", "Attempts", "Calls", "Contacted", "Enrolled", "Lost", ...statuses.map(status => `Status: ${status}`)];
+  const params = { ...filters, by: dim, from: range.fromStr, to: range.toStr };
+  return <>
+    <PageHeader title="Lead reports">{!error && records.length > 0 && <a href={`data:text/csv;charset=utf-8,${encodeURIComponent(toCsv(records))}`} download={`lead-report-${range.fromStr}-${range.toStr}.csv`} className={btn("outline")}>Export CSV</a>}<Link href={viewHref("/reports/agents", params)} className={btn("outline")}>Employee report</Link></PageHeader>
+    <DateFilter label="Lead creation dates" allowAll={false} defaults={{ from: range.fromStr, to: range.toStr }} />
+    <form className="mb-4 flex flex-wrap gap-2"><input type="hidden" name="by" value={dim} /><input type="hidden" name="from" value={range.fromStr} /><input type="hidden" name="to" value={range.toStr} />
+      <Select name="owner" aria-label="Employee" defaultValue={filters.owner ?? ""} options={lookups.users.map(user => ({ value: user.id, label: user.full_name }))} placeholder="All employees" className="!w-44" />
+      <Select name="source" aria-label="Source" defaultValue={filters.source ?? ""} options={lookups.sources.map(source => ({ value: source.id, label: source.name }))} placeholder="All sources" className="!w-44" />
+      <Select name="stage" aria-label="Status" defaultValue={filters.stage ?? ""} options={lookups.stages.map(stage => ({ value: stage.id, label: stage.name }))} placeholder="All statuses" className="!w-44" />
+      <Select name="attempt" aria-label="Attempts" defaultValue={filters.attempt ?? ""} options={["0", "1", "2", "3+"].map(value => ({ value, label: `${value} attempts` }))} placeholder="All attempts" className="!w-40" />
+      <Select name="churn" aria-label="Rechurn" defaultValue={filters.churn ?? ""} options={[{ value: "yes", label: "Rechurned" }, { value: "no", label: "Never rechurned" }]} placeholder="All rechurn states" className="!w-44" />
+      <button className={btn("outline")}>Apply filters</button>
+    </form>
+    <div className="mb-4 flex flex-wrap gap-2">{DIMENSIONS.map(([key, title]) => <Link key={key} href={viewHref("/reports", { ...params, by: key })} className={btn(dim === key ? "primary" : "outline")}>By {title}</Link>)}</div>
+    {!error && <p className="mb-3 text-xs text-muted">{rows.reduce((sum, row) => sum + Number(row.total), 0)} leads. Current statuses and lifetime calls/attempts for leads created in the selected period. Click a column heading to sort.</p>}
+    {error ? <Card className="p-4 text-red-600">{error}</Card> : <Card><ReportTable columns={columns} rows={records} /></Card>}
+  </>;
 }

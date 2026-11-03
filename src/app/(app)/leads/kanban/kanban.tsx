@@ -2,17 +2,26 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { AlarmClock, PhoneCall } from "lucide-react";
+import { AlarmClock, Phone, PhoneCall } from "lucide-react";
 import { toast } from "@/components/toast";
-import { cn } from "@/lib/utils";
+import { Modal, Button } from "@/components/ui";
+import { cn, fmtDateTime } from "@/lib/utils";
+import { viewHref } from "@/lib/view-filters";
 import { moveStage } from "../actions";
 
 export interface KanbanCard {
   id: string;
   name: string;
+  mobile: string;
   leadNo: string;
   priority: string;
   attempts: number;
+  calls: number;
+  lastAttempt: string | null;
+  lastLog: string | null;
+  lastLogAt: string | null;
+  followup: string | null;
+  createdAt: string;
   owner: string;
   course: string;
   overdue: boolean;
@@ -26,6 +35,7 @@ interface Column {
 }
 
 const PRIORITY: Record<string, string> = {
+  other: "bg-slate-500",
   hot: "bg-red-500",
   warm: "bg-amber-500",
   cold: "bg-sky-500",
@@ -34,9 +44,13 @@ const PRIORITY: Record<string, string> = {
 export function Kanban({
   columns: initial,
   perColumn,
+  filters,
+  stages,
 }: {
   columns: Column[];
   perColumn: number;
+  filters: Record<string, string | undefined>;
+  stages: { id: string; name: string }[];
 }) {
   const [columns, setColumns] = useState(initial);
   const [dragging, setDragging] = useState<{
@@ -45,6 +59,7 @@ export function Kanban({
   } | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const [otherStage, setOtherStage] = useState<{ to: string; moving: { card: string; from: string }; text: string } | null>(null);
 
   // fresh data from the server (after a move or a filter change) replaces the local copy
   const [seen, setSeen] = useState(initial);
@@ -53,9 +68,14 @@ export function Kanban({
     setColumns(initial);
   }
 
-  function drop(to: string, moving = dragging) {
+  function drop(to: string, moving = dragging, otherText?: string) {
     setOver(null);
     if (pending || !moving || moving.from === to) return;
+    if (stages.find(column => column.id === to)?.name.toLowerCase() === "other" && !otherText) {
+      setOtherStage({ to, moving, text: "" });
+      setDragging(null);
+      return;
+    }
     const { card, from } = moving;
     setDragging(null);
     const moved = columns
@@ -74,12 +94,12 @@ export function Kanban({
               cards: c.cards.filter((x) => x.id !== card),
             }
           : c.id === to
-            ? { ...c, total: c.total + 1, cards: [moved, ...c.cards] }
+            ? { ...c, total: c.total + 1, cards: [moved, ...c.cards].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)) }
             : c,
       ),
     );
     start(async () => {
-      const res = await moveStage(card, to);
+      const res = await moveStage(card, to, otherText);
       if (res.error) {
         setColumns(before);
         toast(res.error, "error");
@@ -89,6 +109,10 @@ export function Kanban({
 
   return (
     <div className="flex gap-3 overflow-x-auto pb-4">
+      {otherStage && <Modal title="Other status" onClose={() => setOtherStage(null)}><form className="space-y-3" onSubmit={event => { event.preventDefault(); const draft = otherStage; setOtherStage(null); drop(draft.to, draft.moving, draft.text.trim()); }}>
+        <label className="block text-xs font-semibold">Specify status<input autoFocus required maxLength={200} value={otherStage.text} onChange={event => setOtherStage({ ...otherStage, text: event.target.value })} className="input mt-2" /></label>
+        <Button type="submit" disabled={!otherStage.text.trim()}>Move lead</Button>
+      </form></Modal>}
       {columns.map((col) => (
         <section
           key={col.id}
@@ -139,7 +163,7 @@ export function Kanban({
                     title={`${card.priority} priority`}
                   />
                   <Link
-                    href={`/leads/${card.id}`}
+                    href={`/leads/${card.id}?returnTo=${encodeURIComponent(viewHref("/leads/kanban", filters))}`}
                     className="min-w-0 flex-1 truncate font-bold hover:text-brand"
                   >
                     {card.name}
@@ -148,10 +172,21 @@ export function Kanban({
                 <p className="mt-0.5 truncate text-xs text-muted">
                   {card.course || card.leadNo}
                 </p>
+                {card.mobile && (
+                  <a
+                    href={`tel:${card.mobile}`}
+                    draggable={false}
+                    className="mt-1 flex items-center gap-1.5 text-xs hover:text-brand"
+                    aria-label={`Call ${card.name} at ${card.mobile}`}
+                  >
+                    <Phone size={12} aria-hidden="true" className="shrink-0" />
+                    <span>{card.mobile}</span>
+                  </a>
+                )}
                 <div className="mt-2 flex items-center gap-3 text-xs text-muted">
                   <span className="truncate">{card.owner}</span>
                   <span className="ml-auto flex items-center gap-1">
-                    <PhoneCall size={12} /> {card.attempts}
+                    <PhoneCall size={12} aria-hidden="true" /> {card.calls} calls · {card.attempts} attempts
                   </span>
                   {card.overdue && (
                     <AlarmClock
@@ -160,6 +195,12 @@ export function Kanban({
                       aria-label="Follow-up overdue"
                     />
                   )}
+                </div>
+                <div className="mt-2 space-y-1 text-[11px] text-muted">
+                  <p>Last attempt: {fmtDateTime(card.lastAttempt) || "Not attempted"}</p>
+                  <p>Next follow-up: {fmtDateTime(card.followup) || "Not scheduled"}</p>
+                  <p className="line-clamp-2" title={card.lastLog ?? ""}>Last log: {card.lastLog || "No activity yet"}</p>
+                  {card.lastLogAt && <p>{fmtDateTime(card.lastLogAt)}</p>}
                 </div>
                 <label className="mt-4 flex items-center gap-2 border-t border-line pt-3 text-[10px] text-muted">
                   <span className="shrink-0">Move to</span>
@@ -172,7 +213,7 @@ export function Kanban({
                     }
                     className="min-w-0 flex-1 rounded border border-line bg-card p-1 text-[10px] text-fg"
                   >
-                    {columns.map((c) => (
+                    {stages.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
                       </option>
@@ -188,7 +229,7 @@ export function Kanban({
             )}
             {col.total > col.cards.length && col.cards.length >= perColumn && (
               <Link
-                href={`/leads?stage=${col.id}`}
+                href={viewHref("/leads", { ...filters, stage: col.id })}
                 className="block py-1 text-center text-xs font-bold text-brand"
               >
                 View all {col.total} in list

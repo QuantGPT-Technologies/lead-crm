@@ -11,14 +11,14 @@ const secret = () => {
 const sign = (body: string) => createHmac("sha256", secret()).update(body).digest("base64url");
 
 /** Stores a tamper-proof, http-only value that expires after `maxAgeSec`. */
-export async function setSigned(name: string, value: Record<string, unknown>, maxAgeSec: number) {
+export async function setSigned(name: string, value: Record<string, unknown>, maxAgeSec: number, sessionOnly = false) {
   const body = Buffer.from(JSON.stringify({ ...value, exp: Date.now() + maxAgeSec * 1000 })).toString("base64url");
   (await cookies()).set(name, `${body}.${sign(body)}`, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: maxAgeSec,
+    ...(sessionOnly ? {} : { maxAge: maxAgeSec }),
   });
 }
 

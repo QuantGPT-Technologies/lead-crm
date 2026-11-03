@@ -1,7 +1,11 @@
+import { TableSort } from "@/components/table-sort";
+import { tableSort } from "@/lib/view-filters";
+import { DateFilter } from "@/components/date-filter";
+import { filterDates, viewHref } from "@/lib/view-filters";
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import { Badge, Card, Empty, PageHeader, Pager, btn } from "@/components/ui";
-import { fmtDate, fmtMoney, one, type SearchParams } from "@/lib/utils";
+import { fmtDate, fmtMoney, one, dateRange, type SearchParams } from "@/lib/utils";
 
 const SIZE = 50;
 const STATUS = ["open", "won", "lost"];
@@ -17,6 +21,9 @@ export default async function OpportunitiesPage({
   searchParams: SearchParams;
 }) {
   const sp = await searchParams;
+  const sort = tableSort(one(sp.sort), one(sp.dir), ["created_at", "amount", "probability", "expected_close", "title"], "created_at");
+  const from = one(sp.from), to = one(sp.to);
+  const reportDates = dateRange(from ?? "1970-01-01", to ?? "2999-12-31");
   const { supabase } = await getSession();
   const page = Math.max(1, Number(one(sp.page)) || 1);
   const status = STATUS.includes(one(sp.status) ?? "") ? one(sp.status)! : "";
@@ -27,12 +34,13 @@ export default async function OpportunitiesPage({
       "id, title, amount, probability, expected_close, status, created_at, lead:leads(id, student_name), creator:profiles(full_name)",
       { count: "exact" },
     )
-    .order("created_at", { ascending: false })
+    .order(sort.column, { ascending: sort.ascending, nullsFirst: false }).order("id", { ascending: sort.ascending })
     .range((page - 1) * SIZE, page * SIZE - 1);
   if (status) q = q.eq("status", status);
+  q = filterDates(q, from, to, "created_at");
   const [{ data, count, error }, { data: totals }] = await Promise.all([
     q,
-    supabase.rpc("opportunity_totals"),
+    supabase.rpc("crm_opportunity_totals", { p_from: reportDates.from.toISOString(), p_to: reportDates.to.toISOString() }),
   ]);
   const rows = (data ?? []) as unknown as Record<string, unknown>[];
   const total = (s: string) =>
@@ -51,13 +59,15 @@ export default async function OpportunitiesPage({
         {["", ...STATUS].map((s) => (
           <Link
             key={s}
-            href={`/opportunities${s ? `?status=${s}` : ""}`}
+            href={viewHref("/opportunities", { status: s, from, to, sort: sort.column, dir: sort.ascending ? "asc" : "desc" })}
             className={btn(s === status ? "primary" : "outline", "capitalize")}
           >
             {s || "All"}
           </Link>
         ))}
       </PageHeader>
+      <DateFilter label="Created dates" />
+      <TableSort defaultSort="created_at" options={[{ value: "created_at", label: "Created" }, { value: "amount", label: "Amount" }, { value: "probability", label: "Probability" }, { value: "expected_close", label: "Expected close" }, { value: "title", label: "Title" }]} />
 
       <div className="mb-3 grid gap-3 sm:grid-cols-4">
         {[
@@ -156,7 +166,7 @@ export default async function OpportunitiesPage({
           page={page}
           size={SIZE}
           total={count ?? 0}
-          params={{ status }}
+          params={{ status, from, to, sort: sort.column, dir: sort.ascending ? "asc" : "desc" }}
           path="/opportunities"
         />
       </Card>

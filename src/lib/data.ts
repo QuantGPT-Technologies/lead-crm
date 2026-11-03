@@ -4,7 +4,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSession } from "@/lib/auth";
 import { createAdminClient, createLookupClient } from "@/lib/supabase/server";
 import type { Lookups } from "@/lib/types";
-import { cleanSearch, isDateString, todayBounds, startOfDay, addDays } from "@/lib/utils";
+import { isLeadCategory } from "@/lib/lead-categories";
+import { cleanSearch, todayBounds } from "@/lib/utils";
+import { filterDates, LEAD_DATE_FIELDS } from "@/lib/view-filters";
 
 let batchUnavailableUntil = 0;
 /** Dropdown reads are cached for 60 seconds per verified session; edits invalidate the cache. */
@@ -45,7 +47,7 @@ export const getLookups = cache(async (): Promise<Lookups> => {
     active<Lookups["courses"][number]>("courses", "id, name, university_id, fee"),
     active<Lookups["funnels"][number]>("stage_funnels", "id, name, sort_order", "sort_order"),
     active<Lookups["stages"][number]>("stages", "id, name, funnel_id, color, sort_order, is_won, is_lost", "sort_order"),
-    active<Lookups["subStages"][number]>("sub_stages", "id, name, stage_id, sort_order", "sort_order"),
+    active<Lookups["subStages"][number]>("sub_stages", "id, name, stage_id, sort_order, color", "sort_order"),
     active<Lookups["users"][number]>("profiles", "id, full_name, emp_code, role", "full_name"),
     active<Lookups["templates"][number]>("message_templates", "id, name, channel, subject, body"),
   ]);
@@ -71,10 +73,12 @@ export interface LeadFilters {
   from?: string;
   to?: string;
   batch?: string;
+  churn?: string;
+  dateField?: string;
 }
 
 export const LEAD_FILTER_KEYS: (keyof LeadFilters)[] = [
-    "q", "stage", "source", "owner", "university", "course", "product", "priority", "category", "attempt", "followup", "from", "to", "batch",
+    "q", "stage", "source", "owner", "university", "course", "product", "priority", "category", "attempt", "followup", "from", "to", "batch", "churn", "dateField",
 ];
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -98,20 +102,20 @@ export function applyLeadFilters<Q extends { eq: any; or: any; is: any; gte: any
   if (f.owner === "none") q = q.is("owner_id", null);
   else if (id(f.owner)) q = q.eq("owner_id", f.owner);
   if (f.product) q = q.ilike("product", `%${cleanSearch(f.product)}%`);
-  if (f.priority && ["hot", "warm", "cold"].includes(f.priority)) q = q.eq("priority", f.priority);
+  if (f.priority && ["hot", "warm", "cold", "other"].includes(f.priority)) q = q.eq("priority", f.priority);
     if (f.category === "none") q = q.is("category", null);
-    else if (f.category && ["A", "B", "C", "D"].includes(f.category)) q = q.eq("category", f.category);
+    else if (f.category && isLeadCategory(f.category)) q = q.eq("category", f.category);
   if (f.attempt === "3+") q = q.gte("attempt_count", 3);
   else if (f.attempt && /^[0-2]$/.test(f.attempt)) q = q.eq("attempt_count", Number(f.attempt));
+  if (f.churn === "yes") q = q.gte("rechurn_count", 1);
+  if (f.churn === "no") q = q.eq("rechurn_count", 0);
   if (f.followup === "today") {
     const { start, end } = todayBounds();
     q = q.gte("next_followup_at", start.toISOString()).lt("next_followup_at", end.toISOString());
   } else if (f.followup === "missed") {
     q = q.lt("next_followup_at", new Date().toISOString());
   }
-  if (isDateString(f.from)) q = q.gte("created_at", startOfDay(f.from).toISOString());
-  if (isDateString(f.to)) q = q.lt("created_at", addDays(startOfDay(f.to), 1).toISOString());
-  return q;
+  return filterDates(q, f.from, f.to, LEAD_DATE_FIELDS.includes(f.dateField ?? "") ? f.dateField : "created_at");
 }
 
 /**

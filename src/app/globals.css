@@ -310,3 +310,37 @@ input[type="radio"] {
     scroll-behavior: auto !important;
   }
 }
+
+/* Browser controls deter copying; OS capture and developer tools cannot be blocked by a website. */
+.crm-protected-content {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.crm-protected-content input,
+.crm-protected-content textarea,
+.crm-protected-content [contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+.crm-print-block,
+.crm-privacy-shield { display: none; }
+html[data-crm-obscured="true"] .crm-protected-content { visibility: hidden; }
+html[data-crm-obscured="true"] body { visibility: hidden; }
+.crm-protected-content a[download]:not([download="lead-upload-sample.csv"]) { display: none !important; }
+html[data-crm-obscured="true"] .crm-privacy-shield {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  visibility: visible;
+  place-items: center;
+  padding: 2rem;
+  background: var(--bg);
+  color: var(--muted);
+  text-align: center;
+}
+@media print {
+  body:has([data-crm-guard]) > * { display: none !important; }
+  body:has([data-crm-guard])::after { content: "Printing is disabled for this workspace."; }
+}

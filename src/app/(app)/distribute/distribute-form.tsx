@@ -13,7 +13,7 @@ interface User {
 export function DistributeForm({ unassigned, users, sources, stages, batches, initialBatch }: { unassigned: number; users: User[]; sources: Named[]; stages: Named[]; batches: Named[]; initialBatch: string }) {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [count, setCount] = useState(String(Math.min(unassigned, 100) || 1));
-  const [filters, setFilters] = useState({ source: "", stage: "", batch: initialBatch });
+  const [filters, setFilters] = useState({ source: "", stage: "", batch: initialBatch, fromDate: "", toDate: "" });
   const [pending, start] = useTransition();
   const opts = (list: Named[]) => list.map((x) => ({ value: x.id, label: x.name }));
   const each = picked.size ? Math.floor(Number(count) / picked.size) : 0;
@@ -49,6 +49,8 @@ export function DistributeForm({ unassigned, users, sources, stages, batches, in
         <Field label="Only stage">
           <Select value={filters.stage} onChange={(e) => setFilters({ ...filters, stage: e.target.value })} options={opts(stages)} placeholder="Any" />
         </Field>
+        <Field label="Lead created from"><input type="date" value={filters.fromDate} onChange={event => setFilters({ ...filters, fromDate: event.target.value })} className="input" /></Field>
+        <Field label="Lead created to"><input type="date" value={filters.toDate} min={filters.fromDate || undefined} onChange={event => setFilters({ ...filters, toDate: event.target.value })} className="input" /></Field>
         <Field label="How many leads to distribute" required>
           <input type="number" min={1} max={5000} required value={count} onChange={(e) => setCount(e.target.value)} className="input" />
         </Field>

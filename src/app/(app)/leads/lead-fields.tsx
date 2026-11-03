@@ -38,11 +38,11 @@ export const SECTION_FIELDS: Record<Section, FieldDef[]> = {
     { name: "campaign", label: "Campaign" },
     { name: "medium", label: "Medium" },
     { name: "product", label: "Product" },
-    { name: "priority", label: "Priority", type: "select", options: () => fixed("hot", "warm", "cold") },
+    { name: "priority", label: "Priority", type: "select", options: () => fixed("hot", "warm", "cold", "other") },
   ],
   stage: [
     { name: "university_id", label: "University", type: "select", required: true, options: (_, lk) => named(lk.universities), resets: ["course_id"] },
-    { name: "course_id", label: "Course", type: "select", required: true, options: (v, lk) => named(lk.courses.filter((c) => c.university_id === v.university_id)) },
+    { name: "course_id", label: "Program", type: "select", required: true, options: (v, lk) => named(lk.courses.filter((c) => c.university_id === v.university_id)) },
     { name: "_funnel", label: "Stage Funnel", type: "select", options: (_, lk) => named(lk.funnels), resets: ["stage_id", "sub_stage_id"] },
     { name: "stage_id", label: "Stage", type: "select", required: true, options: (v, lk) => named(lk.stages.filter((s) => !v._funnel || s.funnel_id === v._funnel)), resets: ["sub_stage_id"] },
     { name: "sub_stage_id", label: "Sub Stage", type: "select", required: true, options: (v, lk) => named(lk.subStages.filter((s) => s.stage_id === v.stage_id)) },
@@ -78,11 +78,15 @@ export function initialValues(sections: Section[], lead: Partial<Lead> | null, l
   if (sections.includes("stage")) v._funnel = lk.stages.find((s) => s.id === v.stage_id)?.funnel_id ?? "";
   if (!lead && "priority" in v) v.priority = "warm";
   if (!lead && "country" in v) v.country = "India";
+  for (const [field, text] of Object.entries(lead?.other_fields ?? {})) v[`_other_${field}`] = text;
   return v;
 }
 
 /** Values to send to the server: drops UI-only keys such as the funnel picker. */
-export const payload = (v: FormValues) => Object.fromEntries(Object.entries(v).filter(([k]) => !k.startsWith("_")));
+export const payload = (v: FormValues) => ({
+  ...Object.fromEntries(Object.entries(v).filter(([key]) => !key.startsWith("_"))),
+  other_fields: Object.fromEntries(Object.entries(v).filter(([key, text]) => key.startsWith("_other_") && typeof text === "string" && text.trim()).map(([key, text]) => [key.slice(7), text])),
+});
 
 export function SectionFields({
   section,
@@ -101,7 +105,8 @@ export function SectionFields({
 }) {
   const set = (f: FieldDef, value: string | boolean) => {
     const next = { ...values, [f.name]: value };
-    f.resets?.forEach((r) => (next[r] = ""));
+    next[`_other_${f.name}`] = "";
+    f.resets?.forEach((r) => { next[r] = ""; next[`_other_${r}`] = ""; });
     onChange(next);
   };
 
@@ -112,6 +117,7 @@ export function SectionFields({
         .map((f) => {
           const required = !!f.required && (enforceRequired || section === "client");
           const options = f.options?.(values, lookups) ?? [];
+          const isOther = ["source_id", "university_id", "course_id", "stage_id", "sub_stage_id", "gender", "priority"].includes(f.name) && options.some(option => option.value === values[f.name] && option.label.toLowerCase() === "other");
           // a sub stage is only required when the chosen stage actually has some
           const needed = required && !(f.name === "sub_stage_id" && options.length === 0);
           const common = { name: f.name, required: needed, "aria-label": f.label };
@@ -142,6 +148,7 @@ export function SectionFields({
                   className="input"
                 />
               )}
+              {isOther && <input aria-label={`Other ${f.label}`} placeholder={`Specify other ${f.label.toLowerCase()}`} required maxLength={200} value={String(values[`_other_${f.name}`] ?? "")} onChange={event => onChange({ ...values, [`_other_${f.name}`]: event.target.value })} className="input mt-2" />}
             </Field>
           );
         })}

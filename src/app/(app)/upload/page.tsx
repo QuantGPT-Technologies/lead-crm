@@ -1,25 +1,28 @@
+import { DateFilter } from "@/components/date-filter";
+import { filterDates } from "@/lib/view-filters";
 import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { getLookups } from "@/lib/data";
 import { Card, Empty, PageHeader } from "@/components/ui";
-import { fmtDateTime } from "@/lib/utils";
+import { fmtDateTime, one, type SearchParams } from "@/lib/utils";
 import { Uploader } from "./uploader";
 
-export default async function UploadPage() {
+export default async function UploadPage({ searchParams }: { searchParams: SearchParams }) {
+  const sp = await searchParams;
   const { supabase } = await requireRole("admin");
   const lookups = await getLookups();
-  const { data: batches } = await supabase
+  const { data: batches } = await filterDates(supabase
     .from("upload_batches")
     .select("id, file_name, total_rows, inserted_rows, duplicate_rows, invalid_rows, created_at, uploader:profiles(full_name)")
     .order("created_at", { ascending: false })
-    .limit(30);
+    .limit(30), one(sp.from), one(sp.to));
 
   return (
     <>
       <PageHeader title="Upload Leads" />
       <Uploader sources={lookups.sources} />
 
-      <h2 className="mb-2 mt-6 text-base font-extrabold">Recent uploads</h2>
+      <h2 className="mb-2 mt-6 text-base font-extrabold">Recent uploads</h2><DateFilter label="Upload dates" />
       <Card className="overflow-x-auto">
         <table className="table-grid w-full border-collapse">
           <thead>

@@ -15,7 +15,7 @@ import { Badge, Button, Empty, Modal, Select } from "@/components/ui";
 import { notify } from "@/components/toast";
 import type { Role } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { assignLeads, bulkStage, deleteLeads, moveCategory } from "./actions";
+import { bulkAssignLeads, bulkStage, deleteLeads, moveCategory } from "./actions";
 import { CATEGORY_OPTIONS } from "@/lib/lead-categories";
 
 export interface LeadRow {
@@ -29,13 +29,17 @@ export interface LeadRow {
   stage: string;
   stageColor: string;
   subStage: string;
+  subStageColor: string;
   source: string;
   owner: string;
   product: string;
   city: string;
   priority: string;
+  priorityDescription?: string;
   category: string;
   attempts: number;
+  calls: number;
+  lastAttempt: string;
   followup: string;
   overdue: boolean;
   created: string;
@@ -61,6 +65,8 @@ const COLUMNS: {
   { key: "source", label: "Source" },
   { key: "owner", label: "Lead Owner" },
   { key: "attempts", label: "Attempts", sort: "attempt_count" },
+  { key: "calls", label: "Total calls", sort: "total_calls" },
+  { key: "lastAttempt", label: "Last attempt", sort: "last_attempt_at" },
   { key: "followup", label: "Next Followup", sort: "next_followup_at" },
   { key: "priority", label: "Priority", hidden: true },
   { key: "product", label: "Product", hidden: true },
@@ -80,6 +86,9 @@ const DEFAULT_HIDDEN = JSON.stringify(
           "category",
         "owner",
         "followup",
+        "attempts",
+        "calls",
+        "lastAttempt",
         "priority",
       ].includes(c.key),
   ).map((c) => c.key),
@@ -103,6 +112,7 @@ function readColumns() {
   }
 }
 const PRIORITY_COLOR: Record<string, string> = {
+  other: "#64748b",
   hot: "#dc2626",
   warm: "#d97706",
   cold: "#0284c7",
@@ -198,10 +208,10 @@ export function LeadTable({
                 e.target.value && run(() => bulkStage(ids, e.target.value))
               }
             />
-            {isStaff && (
+            {isStaff && params.owner === "none" && (
               <Select
                 aria-label="Assign selected leads"
-                options={[...(role === "admin" ? [{ value: "none", label: "Unassign" }] : []), ...users]}
+                options={users}
                 placeholder="Assign to..."
                 value=""
                 disabled={pending}
@@ -209,13 +219,15 @@ export function LeadTable({
                 onChange={(e) =>
                   e.target.value &&
                   run(() =>
-                    assignLeads(
-                      ids,
-                      e.target.value === "none" ? null : e.target.value,
-                    ),
+                    bulkAssignLeads(ids, e.target.value),
                   )
                 }
               />
+            )}
+            {isStaff && params.owner !== "none" && (
+              <Link href={href({ owner: "none", page: "1" })} className="text-xs font-bold text-brand">
+                Bulk assign unassigned leads
+              </Link>
             )}
             {role === "admin" && (
                 <Select
@@ -245,6 +257,12 @@ export function LeadTable({
         )}
 
         <div className="relative ml-auto flex items-center gap-2">
+          <Select aria-label="Sort leads" value={params.sort ?? "created_at"} placeholder={null}
+            options={COLUMNS.filter(column => column.sort).map(column => ({ value: column.sort!, label: column.label }))}
+            onChange={event => router.push(href({ sort: event.target.value, page: "1" }))} className="!h-9 !w-44" />
+          <Select aria-label="Sort direction" value={params.dir ?? "desc"} placeholder={null}
+            options={[{ value: "asc", label: "Ascending" }, { value: "desc", label: "Descending" }]}
+            onChange={event => router.push(href({ dir: event.target.value, page: "1" }))} className="!h-9 !w-32" />
           <Select
             aria-label="Rows per page"
             options={[25, 50, 100].map((n) => ({
@@ -389,7 +407,7 @@ export function LeadTable({
                 </td>
                 <td>
                   <Link
-                    href={`/leads/${r.id}`}
+                    href={`/leads/${r.id}?returnTo=${encodeURIComponent(href({}))}`}
                     aria-label={`Edit ${r.name}`}
                     className="text-brand"
                   >
@@ -400,7 +418,7 @@ export function LeadTable({
                   <td key={c.key}>
                     {c.key === "name" ? (
                       <Link
-                        href={`/leads/${r.id}`}
+                        href={`/leads/${r.id}?returnTo=${encodeURIComponent(href({}))}`}
                         className="lead-identity font-semibold hover:text-brand"
                       >
                         <span className="lead-avatar">
@@ -421,8 +439,10 @@ export function LeadTable({
                       <Badge color={r.stageColor}>{r.stage}</Badge>
                     ) : c.key === "priority" ? (
                       <Badge color={PRIORITY_COLOR[r.priority]}>
-                        {r.priority}
+                        {r.priorityDescription || r.priority}
                       </Badge>
+                    ) : c.key === "subStage" && r.subStage ? (
+                      <Badge color={r.subStageColor}>{r.subStage}</Badge>
                     ) : c.key === "followup" ? (
                       <span
                         className={cn(r.overdue && "font-bold text-red-600")}

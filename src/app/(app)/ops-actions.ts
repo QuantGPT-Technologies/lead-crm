@@ -148,17 +148,22 @@ async function visibleLeadIds(filters: LeadFilters, limit: number) {
   return ids;
 }
 
-async function setOwner(ids: string[], ownerId: string | null, actor: { id: string; full_name: string }, summary: string) {
+async function setOwner(ids: string[], ownerId: string | null, actor: { id: string; full_name: string }, summary: string, onlyUnassigned = false) {
   const admin = createAdminClient();
   const allotted_at = ownerId ? new Date().toISOString() : null;
+  const assigned: string[] = [];
   for (const part of chunk(ids, 150)) {
-    const { error } = await admin.from("leads").update({ owner_id: ownerId, allotted_at }).in("id", part);
+    let update = admin.from("leads").update({ owner_id: ownerId, allotted_at }).in("id", part);
+    if (onlyUnassigned) update = update.is("owner_id", null);
+    const { data, error } = await update.select("id");
     if (error) throw new Error(error.message);
+    assigned.push(...(data ?? []).map((lead) => lead.id as string));
   }
-  await logActivity(admin, ids.map((id) => ({ lead_id: id, actor_id: actor.id, type: "assigned", summary })));
+  await logActivity(admin, assigned.map((id) => ({ lead_id: id, actor_id: actor.id, type: "assigned", summary })));
+  return assigned;
 }
 
-export async function distributeLeads(v: { agentIds: string[]; count: number; source?: string; batch?: string; stage?: string }): Promise<ActionResult> {
+export async function distributeLeads(v: { agentIds: string[]; count: number; source?: string; batch?: string; stage?: string; fromDate?: string; toDate?: string }): Promise<ActionResult> {
   const { profile } = await getSession();
   if (profile.role !== "admin") return { error: "Only admins can distribute leads" };
   const lk = await getLookups();
@@ -168,22 +173,26 @@ export async function distributeLeads(v: { agentIds: string[]; count: number; so
   if (!(count >= 1 && count <= 5000)) return { error: "Number of leads must be between 1 and 5000" };
 
   try {
-    const ids = await visibleLeadIds({ owner: "none", source: v.source, batch: v.batch, stage: v.stage }, count);
+    const ids = await visibleLeadIds({ owner: "none", source: v.source, batch: v.batch, stage: v.stage, from: v.fromDate, to: v.toDate }, count);
     if (!ids.length) return { error: "No unassigned leads match these filters" };
 
     // round robin so every agent gets an equal share, oldest leads first
     const buckets = agents.map(() => [] as string[]);
     ids.forEach((id, i) => buckets[i % agents.length].push(id));
+    const assignedCounts: number[] = [];
     for (const [i, agent] of agents.entries()) {
-      if (buckets[i].length) await setOwner(buckets[i], agent.id, profile, `${profile.full_name} distributed this lead to ${agent.full_name}`);
+      const assigned = buckets[i].length ? await setOwner(buckets[i], agent.id, profile, `${profile.full_name} distributed this lead to ${agent.full_name}`, true) : [];
+      assignedCounts.push(assigned.length);
     }
-    return done({ message: `${ids.length} lead(s) distributed: ${agents.map((a, i) => `${a.full_name} ${buckets[i].length}`).join(", ")}` });
+    const total = assignedCounts.reduce((sum, count) => sum + count, 0);
+    const skipped = ids.length - total;
+    return done({ message: `${total} lead(s) distributed: ${agents.map((a, i) => `${a.full_name} ${assignedCounts[i]}`).join(", ")}${skipped ? `; ${skipped} already assigned lead(s) skipped` : ""}` });
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Distribution failed" };
   }
 }
 
-export async function transferLeads(v: { from: string; to: string; count: number; untouchedOnly: boolean }): Promise<ActionResult> {
+export async function transferLeads(v: { from: string; to: string; count: number; untouchedOnly: boolean; fromDate?: string; toDate?: string }): Promise<ActionResult> {
   const { profile } = await getSession();
   if (!isStaff(profile.role)) return { error: "Only managers and admins can move leads" };
   if (profile.role === "manager" && v.to === "none") return { error: "Only admins can move leads to the unassigned pool" };
@@ -197,7 +206,7 @@ export async function transferLeads(v: { from: string; to: string; count: number
   if (!(count >= 1 && count <= 5000)) return { error: "Number of leads must be between 1 and 5000" };
 
   try {
-    const ids = await visibleLeadIds({ owner: from.id, attempt: v.untouchedOnly ? "0" : undefined }, count);
+    const ids = await visibleLeadIds({ owner: from.id, attempt: v.untouchedOnly ? "0" : undefined, from: v.fromDate, to: v.toDate, dateField: "allotted_at" }, count);
     if (!ids.length) return { error: `${from.full_name} has no matching leads` };
     const target = to ? to.full_name : "the unassigned pool";
     await setOwner(ids, to?.id ?? null, profile, `${profile.full_name} moved this lead from ${from.full_name} to ${target}`);
@@ -319,7 +328,7 @@ export async function createUser(v: { full_name: string; email: string; password
   return done({ message: `User created. User ID: ${row.emp_code}` });
 }
 
-export async function updateUser(id: string, v: { full_name: string; email: string; role: string; manager_id?: string; phone?: string; is_active: boolean }): Promise<ActionResult> {
+export async function updateUser(id: string, v: { full_name: string; email: string; role: string; manager_id?: string; phone?: string; is_active: boolean; send_setup_email?: boolean }): Promise<ActionResult & { saved?: boolean }> {
   const { profile } = await getSession();
   if (profile.role !== "admin") return { error: "Only admins can edit users" };
   if (!v.full_name?.trim()) return { error: "Name is required" };
@@ -353,7 +362,41 @@ export async function updateUser(id: string, v: { full_name: string; email: stri
   }
   // block / unblock the login itself so a deactivated user's existing session stops refreshing
   await admin.auth.admin.updateUserById(id, { ban_duration: v.is_active ? "none" : "876000h" });
+  if (changedEmail && v.is_active && v.send_setup_email === true) {
+    const emailError = await sendSetupEmail(email);
+    if (emailError) return done({ saved: true, error: `User saved, but ${emailError} Use the email button beside this user to retry.` });
+    return done({ message: `User updated. Password setup email sent to ${email}.` });
+  }
   return done({ message: "User updated" });
+}
+
+async function sendSetupEmail(email: string): Promise<string | null> {
+  const origin = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "https://lead-crm-orpin-ten.vercel.app";
+  try {
+    const { error } = await createStatelessClient().auth.resetPasswordForEmail(email, {
+      redirectTo: `${origin.replace(/\/$/, "")}/login/password-setup`,
+    });
+    if (error) return error.status === 429
+      ? "the email limit was reached. Wait a minute before trying again."
+      : "the password setup email could not be sent. Check Supabase email settings.";
+    return null;
+  } catch {
+    return "the password setup email service could not be reached.";
+  }
+}
+
+export async function sendUserPasswordSetup(id: string): Promise<ActionResult> {
+  const { profile } = await getSession();
+  if (profile.role !== "admin") return { error: "Only admins can send password setup emails" };
+  if (!UUID.test(String(id))) return { error: "User not found" };
+  const admin = createAdminClient();
+  const { data: target, error } = await admin.from("profiles").select("email,is_active").eq("id", id).maybeSingle();
+  if (error || !target) return { error: "User not found" };
+  if (!target.is_active) return { error: "Activate this user before sending a password setup email" };
+  const { data: identity, error: identityError } = await admin.auth.admin.getUserById(id);
+  if (identityError || identity.user.email?.toLowerCase() !== target.email.toLowerCase()) return { error: "The login email does not match the profile. Save the user's login email again before sending." };
+  const emailError = await sendSetupEmail(target.email);
+  return emailError ? { error: emailError } : { message: `Password setup email sent to ${target.email}.` };
 }
 
 export async function resetUserPassword(id: string, password: string): Promise<ActionResult> {

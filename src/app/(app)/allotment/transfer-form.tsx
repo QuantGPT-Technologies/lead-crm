@@ -7,7 +7,7 @@ import type { Named } from "@/lib/types";
 import { transferLeads } from "../ops-actions";
 
 /** Moves leads from one user to another (or back to the unassigned pool), e.g. when someone leaves or is overloaded. */
-export function TransferForm({ users, allowUnassigned = false }: { users: Named[]; allowUnassigned?: boolean }) {
+export function TransferForm({ users, allowUnassigned = false, fromDate = "", toDate = "" }: { users: Named[]; allowUnassigned?: boolean; fromDate?: string; toDate?: string }) {
   const [v, setV] = useState({ from: "", to: "", count: "50", untouchedOnly: false });
   const [pending, start] = useTransition();
   const opts = users.map((u) => ({ value: u.id, label: u.name }));
@@ -19,7 +19,7 @@ export function TransferForm({ users, allowUnassigned = false }: { users: Named[
         className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_140px_auto_auto]"
         onSubmit={(e) => {
           e.preventDefault();
-          start(async () => void notify(await transferLeads({ ...v, count: Number(v.count) })));
+          start(async () => void notify(await transferLeads({ ...v, fromDate, toDate, count: Number(v.count) })));
         }}
       >
         <Field label="Take leads from" required>

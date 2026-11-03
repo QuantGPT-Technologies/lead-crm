@@ -13,7 +13,7 @@ grant all on public.google_calendar_accounts to service_role;
 create table if not exists public.lead_meetings (
   id uuid primary key default gen_random_uuid(),
   lead_id uuid not null references public.leads(id) on delete cascade,
-  organizer_id uuid references public.profiles(id) on delete set null,
+organizer_id uuid references public.profiles(id) on delete set null,
   organizer_email text not null,
   attendee_email text not null,
   title text not null check (length(title) between 1 and 200),

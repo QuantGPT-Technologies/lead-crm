@@ -48,8 +48,12 @@ npm run demo
 
 Starts a real PostgreSQL, PostgREST (the REST layer Supabase uses, downloaded once) and a small stand-in for
 Supabase Auth on this machine, loads `supabase/schema.sql` plus sample leads, and runs the app against them at
-http://localhost:3000. Sign in with `company@demo.test` / `Demo@1234`, then `EA00000001` / `Demo@1234`
-(`EA00000002` is a manager, `EA00000003`-`5` are agents). Data is kept in `.demo/`; `npm run demo -- --reset` wipes it.
+http://localhost:3000. Sign in with `company@demo.test` / `Demo@1234`, then `admin@demo.test` / `Demo@1234`.
+Use `manager@demo.test` for the manager or `arjun@demo.test`, `bela@demo.test`, and
+`chetan@demo.test` for agents (same password). Employee IDs are not accepted for login.
+Data is kept in `.demo/`; `npm run demo -- --reset` wipes it.
+These credentials apply to `npm run demo`; `npm run dev` uses the Supabase project
+configured in `.env.local` and requires that project's account email and password.
 The app code is identical in demo and real mode; `.env.local` is ignored while the demo runs. Email OTP is not
 available in the demo. It is for viewing and testing only, not for production.
 
@@ -85,6 +89,22 @@ Before deploying, run `npm run lint` and `npm run build`. Deploy to the already-
 `vercel --prod`. Vercel builds with its production environment variables, not the local demo variables.
 
 ## Excel replacement and lead categories
+
+Run [`supabase/upgrade-010-universities.sql`](supabase/upgrade-010-universities.sql) on existing
+databases to add Amity, UU, SGT, GLA, SMU, MUJ, and NMIMS to the University dropdown.
+Add each university's programs under Configuration → Masters → Courses; Add Lead displays
+these as Program options for the selected university. The local demo applies this migration on startup.
+
+Then run [`supabase/upgrade-011-programs.sql`](supabase/upgrade-011-programs.sql) to add the
+degree-level program options for those universities. Names distinguish Campus, Online, and
+UU's Hybrid Executive MBA. UU means Uttaranchal University; SGT means SGT University,
+Gurugram; SMU means Sikkim Manipal University; MUJ means Manipal University Jaipur.
+The migration documents official catalog sources. It adds program families rather than an
+exhaustive list of campus-specific specializations and certificates. Additional specializations
+can be added in Masters → Courses. Fees stay unset until configured, and existing program
+IDs, fees, and active/inactive settings are preserved. Both the fresh schema and demo startup
+include these options. Online options are only seeded where found in the referenced catalogs;
+the list does not assert that a separate distance mode or admissions intake is currently open.
 
 Apply [`supabase/upgrade-003-lead-categories.sql`](supabase/upgrade-003-lead-categories.sql)
 in the production SQL Editor before deploying the category UI. The local demo applies it on startup.
@@ -127,7 +147,7 @@ Stage settings are read from `supabase/kanban-stages.json`.
 ## Signing in
 
 1. **Global Sign In** – the shared company email + password (`SETUP_GLOBAL_*`). Turn off with `AUTH_REQUIRE_GLOBAL_LOGIN=false`.
-2. **User Login** – the person's User ID (or email) + their own password.
+2. **User Login** – the person's email + their own password.
 3. **OTP Validation** – a code emailed to the user. Off by default (`AUTH_REQUIRE_OTP=false`).
 
 **To turn OTP on:** Supabase → Authentication → Email Templates → **Magic Link** → put `{{ .Token }}` in the body
@@ -216,3 +236,52 @@ The two requested production admins are director@successmentorix.com and founder
 Apply supabase/upgrade-008-team-access.sql to existing databases. Admins manage team member login emails, roles and reporting managers from Configuration ? Team members. Editing a login email updates both Supabase Auth and the CRM profile; failures restore the prior auth email when possible. Agents see their own assigned work. Managers see their own work and active direct reports, with team-only user choices and assignment targets. Admins alone can see the unassigned pool, import/distribute leads, manage configuration and use external lead-post integrations. These rules apply to direct database reads as well as the UI; reports, dashboard counts and lead history follow the same lead policies.
 
 Run node scripts/verify-team-access.mjs for local PostgreSQL scope tests with rollback fixtures.
+
+When an admin edits a team member, the checked password-setup email option sends a recovery link to the new login address after both Auth and the profile save successfully. Unchanged emails and inactive users receive no notification. The envelope button beside an active team member sends or resends a setup link to their current verified login address. If email sending fails after an edit, the app says that the user was saved and the email failed; the envelope button can retry without changing the email again. Passwords are never included in these messages.
+
+## Tab sessions and browser content controls
+
+Sign-in creates a signed, HttpOnly, session-only cookie bound to the verified Supabase session and a matching random key in the tab's sessionStorage. The app requires the signed session on server actions/pages and validates the tab key before displaying the workspace. New tabs without the key show sign-in. Auth cookies are also session-only. The proof has a 12-hour maximum lifetime. Cookies are shared by browser tabs, so signing in again replaces the prior tab's session; the old tab locks on its next validation. Existing sessions need a fresh sign-in after this change.
+
+On a normal tab close, pagehide sends a same-origin logout beacon and removes the tab key. A nonce check prevents a stale tab from signing out a newer login. Navigation API events preserve refresh and full-page navigation, including Google Calendar authorization. Browser crashes, forced termination, session restoration and missing unload events cannot guarantee an immediate server logout. In particular, browsers can restore or duplicate sessionStorage; these controls are not a replacement for managed-device session policies. New tabs without saved tab state still require sign-in even if a logout beacon was lost.
+
+The protected workspace blocks normal copy, cut, context-menu and drag events, common copy/print/save shortcuts, and normal data download links. Text fields remain editable and pasting remains available. Print CSS produces a blank CRM view; the upload template remains downloadable. CRM content and notifications are hidden while the window is inactive. These are browser deterrents, not data-loss-prevention enforcement: OS screenshots, external screen recording, cameras, developer tools, extensions and copied network responses cannot reliably be blocked by a website. Strong capture restrictions require device/browser management outside this app.
+
+## Workflow and reporting upgrade (November 2026)
+
+After applying upgrades 001?011, run [`supabase/upgrade-012-workflow-reports.sql`](supabase/upgrade-012-workflow-reports.sql)
+in the Supabase SQL Editor before using the updated app. It adds last-attempt/last-log data,
+separate call totals, per-lead Other text, sub-status colours, and scoped report functions.
+Historical activities initialize attempt totals without deleting leads or changing owners.
+Every subsequent saved activity increments attempts atomically; a real call increments the
+separate call counter. Rechurning retains the lifetime attempt count. Apply this migration
+before deploying code that queries the new columns. The local demo applies it on startup.
+
+Reports use the company timezone. Lead reports filter a creation-date cohort and show current
+statuses and lifetime attempts/calls. Employee reports bucket actual activity timestamps by
+day, Monday-starting week, or month; status columns describe leads allotted in each period.
+The default employee report combines all period buckets into one row per employee for the
+selected range. Choose an explicit daily/weekly/monthly breakdown for period rows; inactive
+periods are hidden unless ?Show inactive periods? is selected. CSV exports match the view.
+Report functions enforce the caller's database row visibility and preserve source/employee/status
+filters. Large reports paginate database reads rather than silently stopping at 1,000 rows.
+
+`node scripts/verify-workflow.mjs` checks the existing local demo database on port 54329,
+with all test fixture changes rolled back. It covers metric protection, independent counters,
+report periods, source/team scope, Other validation, timezone boundaries, and migration reruns.
+`node scripts/verify-bulk-assignment.mjs` runs the offline assignment regressions.
+
+## Report timeout fix
+
+If reports fail with `canceling statement due to statement timeout` after upgrade-012,
+apply [`supabase/upgrade-013-report-performance.sql`](supabase/upgrade-013-report-performance.sql).
+There is no need to rerun upgrade-012. Upgrade-013 keeps the report function signatures and
+row visibility rules, aggregates lead rows before resolving names, caches fixed caller-role
+checks per statement, and adds report indexes. It does not update leads, owners, or counters.
+The fresh schema and demo startup include it. If reapplying upgrade-012 later, apply 013 again
+afterward so its optimized function definitions remain active.
+
+Run `node scripts/verify-report-performance.mjs` against the local demo database to compare
+all eleven lead report groupings and all three employee report periods with the original
+results as admin, manager, and agent. Workload fixtures roll back. Timings are local measurements,
+not a guarantee of production response time.
