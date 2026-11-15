@@ -6,7 +6,7 @@ import { TAB_STORAGE } from "@/lib/tab-session-constants";
 type NavigationWindow = Window & { navigation?: EventTarget };
 type NavigationEvent = Event & { navigationType?: string; destination?: { sameDocument?: boolean } };
 
-export function WorkspaceGuard({ children }: { children: React.ReactNode }) {
+export function WorkspaceGuard({ children, loginPath = "/login?fresh=1" }: { children: React.ReactNode; loginPath?: string }) {
   const [ready, setReady] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
 
@@ -16,7 +16,7 @@ export function WorkspaceGuard({ children }: { children: React.ReactNode }) {
     try { key = sessionStorage.getItem(TAB_STORAGE); } catch { /* Storage denied: require a fresh sign-in. */ }
     const login = () => {
       try { sessionStorage.removeItem(TAB_STORAGE); } catch { /* Already unavailable. */ }
-      window.location.replace("/login?fresh=1");
+      window.location.replace(loginPath);
     };
     // Browsers can clone sessionStorage into windows opened with an opener.
     if (window.opener) { window.opener = null; login(); return; }
@@ -100,7 +100,7 @@ export function WorkspaceGuard({ children }: { children: React.ReactNode }) {
       blocked.forEach(name => document.removeEventListener(name, prevent, true));
       delete document.documentElement.dataset.crmObscured;
     };
-  }, []);
+  }, [loginPath]);
 
   return <div data-crm-guard>
     <div className="crm-print-block">Printing is disabled for this workspace.</div>

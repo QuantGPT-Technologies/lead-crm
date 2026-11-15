@@ -95,6 +95,7 @@ await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-011-programs.sq
 await configureLocalKanban(db, { once: true });
 await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-012-workflow-reports.sql"), "utf8"));
 await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-013-report-performance.sql"), "utf8"));
+await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-014-partner-program.sql"), "utf8"));
 if (firstRun) {
   await db.query("update public.stages set is_active=true where lower(name)='other'");
   await db.query("update public.sub_stages set is_active=true where lower(name)='other'");

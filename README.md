@@ -285,3 +285,39 @@ Run `node scripts/verify-report-performance.mjs` against the local demo database
 all eleven lead report groupings and all three employee report periods with the original
 results as admin, manager, and agent. Workload fixtures roll back. Timings are local measurements,
 not a guarantee of production response time.
+
+## Partner program
+
+Apply [`supabase/upgrade-014-partner-program.sql`](supabase/upgrade-014-partner-program.sql)
+after upgrade-013. The fresh schema and demo startup include it.
+
+Partners are external lead suppliers with their own portal at `/partner`. They are not staff:
+they have no row in `profiles`, so every existing row-level-security policy denies them direct
+database access. The portal reads and writes on the server, always limited to the signed-in
+partner's own leads.
+
+**Creating and verifying a partner**
+
+1. An admin adds the partner under Administration → Partners (name, organization, email, mobile).
+2. The partner receives an email link to `/partner/setup`. Opening it verifies the email and lets
+   them choose a password. The email button beside a partner sends a fresh link.
+3. The partner signs in at `/partner/login` with that email and password.
+
+The mobile number is saved for contact only; it is not verified. The Partners page shows whether
+each partner has verified their email. Deactivating a partner blocks their login immediately.
+
+**What partners can do**
+
+- *Add leads*: paste rows copied from Excel or Google Sheets (with or without a header row), CSV,
+  or one lead per line. Columns are detected automatically and can be corrected in the preview.
+  Rows with problems, repeats inside the paste, and mobile numbers already in the CRM are marked
+  and skipped. On confirmation, up to 500 leads are added in one go.
+- *My leads*: a list with lead number, contact name, city, state, course, status, and dates. Contact
+  details and the update history are shown only after opening a lead.
+- *Remarks*: partners can add remarks to their leads but cannot edit or delete them.
+
+Partner leads enter the unassigned pool with source **Partner Program**, so they can be
+distributed like any import (each submission is also an upload batch). Staff see a "Partner lead"
+banner on the lead page. Notes, calls, stage changes and other timeline entries made by staff are
+visible to the partner, and partner remarks appear in the staff timeline and notifications.
+Category changes, webhook posts, and internal-note or owner field changes are not shown to partners.

@@ -112,3 +112,17 @@ export interface Activity {
 export type ActionResult = { error?: string; id?: string; message?: string };
 
 export type Row = Record<string, unknown> & { id: string };
+
+export interface Partner {
+  id: string;
+  partner_code: string;
+  full_name: string;
+  organization: string | null;
+  email: string;
+  phone: string;
+  city: string | null;
+  is_active: boolean;
+  email_verified_at: string | null;
+  last_login_at: string | null;
+  created_at: string;
+}

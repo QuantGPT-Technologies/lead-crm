@@ -17,7 +17,10 @@ export const getSession = cache(async () => {
 
   // Signed-in users can only read colleagues' names and roles from `profiles`; the full row
   // (email, phone) of the verified user is read with the service role.
-  const { data: profile } = await createAdminClient().from("profiles").select("*").eq("id", user.id).maybeSingle();
+  const admin = createAdminClient();
+  const { data: profile } = await admin.from("profiles").select("*").eq("id", user.id).maybeSingle();
+  // Partners have their own portal and never see the staff workspace.
+  if (!profile && (await admin.from("partners").select("id").eq("id", user.id).maybeSingle()).data) redirect("/partner");
   if (!profile || !profile.is_active) {
     await supabase.auth.signOut({ scope: "local" });
     redirect("/login?error=inactive");

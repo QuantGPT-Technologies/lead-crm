@@ -81,6 +81,7 @@ const ACTIVITY_COLOR: Record<string, string> = {
   stage_change: "#5d8062",
   assigned: "#0ea5e9",
   note: "#d97706",
+  partner_remark: "#b45309",
   call: "#0891b2",
   email: "#285b43",
   sms: "#8a9f6c",

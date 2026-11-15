@@ -8,6 +8,8 @@ import { LeadEditor } from "./lead-editor";
 import { getLeadMeetings } from "@/lib/meeting-data";
 import { env } from "@/lib/env";
 import { one, type SearchParams } from "@/lib/utils";
+import { createAdminClient } from "@/lib/supabase/server";
+import { Handshake } from "lucide-react";
 
 export default async function LeadPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SearchParams }) {
   const { id } = await params;
@@ -30,6 +32,10 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
       .order(sort, { ascending: cursor.ascending, nullsFirst: cursor.nullsFirst }).order("id", { ascending: cursor.ascending }).limit(1).maybeSingle();
   };
   const meetingData = await getLeadMeetings(id, one(sp.calendar));
+  // Partner leads: the partner sees this lead's history, so say so where staff write it.
+  const partner = lead.partner_id
+    ? (await createAdminClient().from("partners").select("full_name, organization, partner_code").eq("id", lead.partner_id).maybeSingle()).data
+    : null;
 
   const [lookups, activities, calls, tasks, messages, posts, enrollment, opportunities, newer, older, postUrl] = await Promise.all([
     getLookups(),
@@ -46,6 +52,15 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
   ]);
 
   return (
+    <>
+    {partner && (
+      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm">
+        <Handshake size={16} className="text-amber-700" />
+        <span className="font-semibold">Partner lead</span>
+        <span>from {partner.full_name}{partner.organization ? ` (${partner.organization})` : ""} · {partner.partner_code}.</span>
+        <span className="text-muted">The partner can see this lead&apos;s history (notes, calls, stage changes) and can add remarks.</span>
+      </div>
+    )}
     <LeadEditor
       lead={lead as Lead}
       returnTo={returnTo}
@@ -67,6 +82,7 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
         meetingTimezone={env.timezone}
         meetingNow={new Date().toISOString()}
     />
+    </>
   );
 }
 

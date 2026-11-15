@@ -8,7 +8,7 @@ import { Badge, Card, Empty, PageHeader, Pager, Select, btn } from "@/components
 import { fmtDateTime, one, type SearchParams } from "@/lib/utils";
 
 const SIZE = 50;
-const TYPES = ["created", "updated", "stage_change", "assigned", "note", "call", "email", "sms", "whatsapp", "task", "rechurn", "enrolled", "opportunity", "post"];
+const TYPES = ["created", "updated", "stage_change", "assigned", "note", "call", "email", "sms", "whatsapp", "task", "rechurn", "enrolled", "opportunity", "post", "partner_remark"];
 
 export default async function ActivityPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;

@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { env, isSupabaseConfigured } from "@/lib/env";
 import { TAB_COOKIE } from "@/lib/tab-session-constants";
 
-const PUBLIC = ["/login", "/setup", "/api/cron", "/api/session"];
+const PUBLIC = ["/login", "/setup", "/api/cron", "/api/session", "/partner/login", "/partner/setup"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -33,9 +33,12 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
   let signedIn = !!user && request.cookies.has(TAB_COOKIE);
+  let partner = false;
   if (user) {
     const { data: role, error } = await supabase.rpc("app_role");
-    if (error || !role) {
+    // Partners have no staff role; they are let in only while active and fully verified.
+    if (!error && !role) partner = (await supabase.rpc("partner_portal_access")).data === true;
+    if (error || (!role && !partner)) {
       await supabase.auth.signOut({ scope: "local" });
       signedIn = false;
     }
@@ -51,13 +54,18 @@ export async function proxy(request: NextRequest) {
   // the POST here instead would hand the browser an HTML page it cannot read as an action result.
   if (!signedIn && !isPublic && request.method === "POST" && request.headers.has("next-action")) return response;
 
+  const partnerArea = pathname === "/partner" || pathname.startsWith("/partner/");
   if (!signedIn && !isPublic) {
-    const url = new URL("/login", request.url);
-    if (pathname !== "/") url.searchParams.set("next", pathname);
+    const url = new URL(partnerArea ? "/partner/login" : "/login", request.url);
+    if (pathname !== "/" && !partnerArea) url.searchParams.set("next", pathname);
     return redirectWithCookies(url);
   }
-  if (signedIn && pathname === "/login" && request.nextUrl.searchParams.get("fresh") !== "1") {
-    return redirectWithCookies(new URL("/dashboard", request.url));
+  if (signedIn && (pathname === "/login" || pathname === "/partner/login") && request.nextUrl.searchParams.get("fresh") !== "1") {
+    return redirectWithCookies(new URL(partner ? "/partner" : "/dashboard", request.url));
+  }
+  // Partners stay inside their portal; staff pages would only bounce them back anyway.
+  if (signedIn && partner && !partnerArea && !isPublic) {
+    return redirectWithCookies(new URL("/partner", request.url));
   }
   return response;
 }

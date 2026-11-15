@@ -57,6 +57,7 @@ export const NAV: NavItem[] = [
     roles: ["admin"],
     children: [
       { label: "Team members", href: "/config/users", icon: "UserCog" },
+      { label: "Partners", href: "/config/partners", icon: "Handshake" },
       { label: "Data & stages", href: "/config/masters", icon: "Database" },
       { label: "Settings", href: "/config/settings", icon: "Settings" },
     ],
