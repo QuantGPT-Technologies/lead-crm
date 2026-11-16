@@ -3,7 +3,7 @@
 import { revalidatePath, updateTag } from "next/cache";
 import { chunk } from "@/lib/data";
 import { getPartnerSession, partnerLabel } from "@/lib/partner-auth";
-import { firstStageId, matchCourse, partnerCourses, partnerSourceId } from "@/lib/partner-data";
+import { firstStageId, matchCourse, partnerCourses, partnerSourceId, partnerStatusOptions } from "@/lib/partner-data";
 import { leadProblem, MAX_PARTNER_ROWS, type PartnerLeadInput } from "@/lib/partner-paste";
 import { isValidMobile, normalizeMobile } from "@/lib/utils";
 
@@ -132,4 +132,45 @@ export async function addPartnerRemark(leadId: string, text: string): Promise<{ 
   updateTag("crm-dashboard");
   revalidatePath(`/partner/leads/${leadId}`);
   return { message: "Remark added" };
+}
+
+/** Partners can move their own lead to another status; the change is logged for both sides. */
+export async function updatePartnerLeadStatus(leadId: string, stageId: string, subStageId: string | null, otherText?: string): Promise<{ error?: string; message?: string }> {
+  const { partner, admin } = await getPartnerSession();
+  if (!UUID.test(String(leadId)) || !UUID.test(String(stageId))) return { error: "Choose a status" };
+  const options = await partnerStatusOptions(admin);
+  const stage = options.find((o) => o.id === stageId);
+  if (!stage) return { error: "This status is no longer available" };
+  const sub = stage.subs.length ? stage.subs.find((x) => x.id === subStageId) : null;
+  if (stage.subs.length && !sub) return { error: "Choose a sub-status" };
+  const isOther = stage.name.toLowerCase() === "other";
+  const other = typeof otherText === "string" ? otherText.trim() : "";
+  if (isOther && (!other || other.length > 200)) return { error: "Describe the status (1–200 characters)" };
+
+  const { data: lead } = await admin.from("leads").select("id, stage_id, sub_stage_id, other_fields").eq("id", leadId).eq("partner_id", partner.id).maybeSingle();
+  if (!lead) return { error: "Lead not found" };
+  const custom = { ...((lead.other_fields ?? {}) as Record<string, string>) };
+  delete custom.sub_stage_id;
+  if (isOther) custom.stage_id = other; else delete custom.stage_id;
+  const nextSub = sub?.id ?? null;
+  const previousOther = (lead.other_fields as Record<string, string> | null)?.stage_id ?? "";
+  if (lead.stage_id === stage.id && (lead.sub_stage_id ?? null) === nextSub && (!isOther || previousOther === other)) return { message: "No change" };
+
+  const label = (id: string | null, subId: string | null) => {
+    const s = options.find((o) => o.id === id);
+    if (!s) return "None";
+    const x = s.subs.find((y) => y.id === subId);
+    return x ? `${s.name} / ${x.name}` : s.name;
+  };
+  const { error } = await admin.from("leads").update({ stage_id: stage.id, sub_stage_id: nextSub, other_fields: custom }).eq("id", leadId).eq("partner_id", partner.id);
+  if (error) return { error: "Could not update the status. Please try again." };
+  const after = label(stage.id, nextSub) + (isOther ? ` (${other})` : "");
+  await admin.from("lead_activities").insert({
+    lead_id: leadId, partner_id: partner.id, type: "stage_change",
+    summary: `${partnerLabel(partner)} (partner) moved this lead to ${stage.name}`,
+    details: { fields: { Stage: `${label(lead.stage_id, lead.sub_stage_id)} → ${after}` } },
+  });
+  refreshStaffViews();
+  revalidatePath(`/partner/leads/${leadId}`);
+  return { message: `Status changed to ${after}` };
 }

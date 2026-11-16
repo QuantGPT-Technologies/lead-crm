@@ -3,13 +3,15 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Handshake, MessageSquareText, User } from "lucide-react";
 import { Badge, Card, Empty } from "@/components/ui";
 import { getPartnerSession } from "@/lib/partner-auth";
-import { partnerTimeline } from "@/lib/partner-data";
+import { partnerStatusOptions, partnerTimeline } from "@/lib/partner-data";
 import { fmtDate, fmtDateTime } from "@/lib/utils";
 import { RemarkForm } from "./remark-form";
+import { StatusForm } from "./status-form";
 
 type LeadRow = {
   id: string; lead_no: string; student_name: string; mobile: string; alt_mobile: string | null; email: string | null;
   city: string | null; state: string | null; product: string | null; created_at: string; next_followup_at: string | null;
+  stage_id: string | null; sub_stage_id: string | null; other_fields: Record<string, string> | null;
   course: { name: string } | null; university: { name: string } | null; stage: { name: string; color: string } | null;
   sub_stage: { name: string } | null; owner: { full_name: string } | null;
 };
@@ -20,13 +22,14 @@ export default async function PartnerLeadPage({ params }: { params: Promise<{ id
   const { partner, admin } = await getPartnerSession();
   const { data } = await admin
     .from("leads")
-    .select("id, lead_no, student_name, mobile, alt_mobile, email, city, state, product, created_at, next_followup_at, course:courses(name), university:universities(name), stage:stages(name, color), sub_stage:sub_stages(name), owner:profiles!leads_owner_id_fkey(full_name)")
+    .select("id, lead_no, student_name, mobile, alt_mobile, email, city, state, product, created_at, next_followup_at, stage_id, sub_stage_id, other_fields, course:courses(name), university:universities(name), stage:stages(name, color), sub_stage:sub_stages(name), owner:profiles!leads_owner_id_fkey(full_name)")
     .eq("id", id)
     .eq("partner_id", partner.id)
     .maybeSingle();
   if (!data) notFound();
   const lead = data as unknown as LeadRow;
-  const timeline = await partnerTimeline(admin, id, partner.id);
+  const [timeline, statusOptions] = await Promise.all([partnerTimeline(admin, id, partner.id), partnerStatusOptions(admin)]);
+  const otherStatus = lead.other_fields?.stage_id ?? "";
 
   const details: [string, string][] = [
     ["Mobile", lead.mobile],
@@ -52,10 +55,15 @@ export default async function PartnerLeadPage({ params }: { params: Promise<{ id
         <div className="flex flex-wrap items-center gap-2">
           {lead.stage ? <Badge color={lead.stage.color}>{lead.stage.name}</Badge> : <Badge color="#64748b">New</Badge>}
           {lead.sub_stage && <Badge color="#64748b">{lead.sub_stage.name}</Badge>}
+          {otherStatus && lead.stage?.name.toLowerCase() === "other" && <Badge color="#64748b">{otherStatus}</Badge>}
         </div>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[340px_1fr]">
+        <div className="space-y-5">
+        <Card className="p-4">
+          <StatusForm leadId={lead.id} options={statusOptions} stageId={lead.stage_id} subStageId={lead.sub_stage_id} otherText={otherStatus} />
+        </Card>
         <Card className="h-fit p-4">
           <h2 className="mb-3 text-lg font-semibold">Details</h2>
           <dl className="space-y-2.5 text-sm">
@@ -67,6 +75,7 @@ export default async function PartnerLeadPage({ params }: { params: Promise<{ id
             ))}
           </dl>
         </Card>
+        </div>
 
         <Card className="p-4">
           <h2 className="mb-1 text-lg font-semibold">Updates</h2>
@@ -84,7 +93,7 @@ export default async function PartnerLeadPage({ params }: { params: Promise<{ id
                       {mine ? <Handshake size={15} /> : a.type === "partner_remark" || a.type === "note" ? <MessageSquareText size={15} /> : <User size={15} />}
                     </span>
                     <div className="min-w-0 flex-1 border-t border-line pt-1.5">
-                      <p className="font-semibold" style={{ color }}>{mine ? (a.type === "created" ? "You submitted this lead" : "You added a remark") : a.summary}</p>
+                      <p className="font-semibold" style={{ color }}>{mine ? (a.type === "created" ? "You submitted this lead" : a.type === "stage_change" ? "You changed the status" : "You added a remark") : a.summary}</p>
                       {a.fields.length > 0 && (
                         <ul className="mt-1.5 space-y-1 text-sm">
                           {a.fields.map(([k, v]) => (

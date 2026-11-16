@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ClipboardPaste, Search } from "lucide-react";
 import { Badge, btn, Card, Empty, Pager } from "@/components/ui";
 import { getPartnerSession } from "@/lib/partner-auth";
+import { partnerStatusOptions } from "@/lib/partner-data";
 import { cleanSearch, fmtDate, fmtDateTime, one, type SearchParams } from "@/lib/utils";
 
 const SIZE = 50;
@@ -17,6 +18,11 @@ export default async function PartnerLeadsPage({ searchParams }: { searchParams:
   const { partner, admin } = await getPartnerSession();
   const q = cleanSearch(one(sp.q) ?? "");
   const page = Math.max(1, Number(one(sp.page)) || 1);
+  const statusOptions = await partnerStatusOptions(admin);
+  const requested = one(sp.status) ?? "";
+  const status = requested === "none" || statusOptions.some((o) => o.id === requested) ? requested : "";
+  const funnels = [...new Set(statusOptions.map((o) => o.funnel))];
+  const filtered = !!(q || status);
 
   // The list shows summary columns only; contact details and updates open with the lead.
   let query = admin
@@ -24,6 +30,8 @@ export default async function PartnerLeadsPage({ searchParams }: { searchParams:
     .select("id, lead_no, student_name, city, state, product, created_at, last_activity_at, course:courses(name), stage:stages(name, color)", { count: "exact" })
     .eq("partner_id", partner.id);
   if (q) query = query.or(`student_name.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,lead_no.ilike.%${q}%`);
+  if (status === "none") query = query.is("stage_id", null);
+  else if (status) query = query.eq("stage_id", status);
   const { data, count } = await query.order("created_at", { ascending: false }).order("id").range((page - 1) * SIZE, page * SIZE - 1);
   const rows = (data ?? []) as unknown as Row[];
 
@@ -43,11 +51,20 @@ export default async function PartnerLeadsPage({ searchParams }: { searchParams:
             <Search size={14} className="text-muted" />
             <input name="q" defaultValue={q} placeholder="Search by name, city, state or lead number" className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none" aria-label="Search leads" />
           </label>
-          <button type="submit" className={btn("outline")}>Search</button>
-          {q && <Link href="/partner" className={btn("ghost")}>Clear</Link>}
+          <select name="status" defaultValue={status} className="input h-10 w-auto min-w-[180px]" aria-label="Filter by status">
+            <option value="">All statuses</option>
+            {funnels.map((f) => (
+              <optgroup key={f} label={f}>
+                {statusOptions.filter((o) => o.funnel === f).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+              </optgroup>
+            ))}
+            <option value="none">No status</option>
+          </select>
+          <button type="submit" className={btn("outline")}>Apply</button>
+          {filtered && <Link href="/partner" className={btn("ghost")}>Clear</Link>}
         </form>
         {rows.length === 0 ? (
-          <Empty>{q ? "No leads match your search." : <>You have not submitted any leads yet. <Link href="/partner/upload" className="font-semibold text-brand underline">Add your first leads</Link>.</>}</Empty>
+          <Empty>{filtered ? "No leads match these filters." : <>You have not submitted any leads yet. <Link href="/partner/upload" className="font-semibold text-brand underline">Add your first leads</Link>.</>}</Empty>
         ) : (
           <div className="overflow-x-auto">
             <table className="table-grid w-full border-collapse">
@@ -74,7 +91,7 @@ export default async function PartnerLeadsPage({ searchParams }: { searchParams:
             </table>
           </div>
         )}
-        <Pager page={page} size={SIZE} total={count ?? 0} params={{ q: q || undefined }} path="/partner" />
+        <Pager page={page} size={SIZE} total={count ?? 0} params={{ q: q || undefined, status: status || undefined }} path="/partner" />
       </Card>
     </>
   );

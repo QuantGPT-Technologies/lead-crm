@@ -86,3 +86,33 @@ export async function partnerTimeline(admin: SupabaseClient, leadId: string, par
     };
   });
 }
+
+export interface PartnerStatusOption {
+  id: string;
+  name: string;
+  color: string;
+  funnel: string;
+  subs: { id: string; name: string }[];
+}
+
+/** Active statuses (stages) in funnel order, each with its active sub-statuses. */
+export async function partnerStatusOptions(admin: SupabaseClient): Promise<PartnerStatusOption[]> {
+  const [{ data: funnels }, { data: stages }, { data: subs }] = await Promise.all([
+    admin.from("stage_funnels").select("id, name, sort_order").eq("is_active", true).order("sort_order"),
+    admin.from("stages").select("id, funnel_id, name, color, sort_order").eq("is_active", true).order("sort_order"),
+    admin.from("sub_stages").select("id, stage_id, name, sort_order").eq("is_active", true).order("sort_order"),
+  ]);
+  const funnelList = funnels ?? [];
+  const position = new Map(funnelList.map((f, i) => [f.id as string, i]));
+  const funnelName = new Map(funnelList.map((f) => [f.id as string, f.name as string]));
+  return (stages ?? [])
+    .filter((s) => position.has(s.funnel_id as string))
+    .sort((a, b) => position.get(a.funnel_id as string)! - position.get(b.funnel_id as string)! || (a.sort_order as number) - (b.sort_order as number))
+    .map((s) => ({
+      id: s.id as string,
+      name: s.name as string,
+      color: s.color as string,
+      funnel: funnelName.get(s.funnel_id as string) ?? "",
+      subs: (subs ?? []).filter((x) => x.stage_id === s.id).map((x) => ({ id: x.id as string, name: x.name as string })),
+    }));
+}
