@@ -326,6 +326,7 @@ input[type="radio"] {
 .crm-print-block,
 .crm-privacy-shield { display: none; }
 html[data-crm-obscured="true"] .crm-protected-content { visibility: hidden; }
+html:not([data-crm-tab]) .crm-protected-content { visibility: hidden; }
 html[data-crm-obscured="true"] body { visibility: hidden; }
 .crm-protected-content a[download]:not([download="lead-upload-sample.csv"]) { display: none !important; }
 html[data-crm-obscured="true"] .crm-privacy-shield {
@@ -344,3 +345,13 @@ html[data-crm-obscured="true"] .crm-privacy-shield {
   body:has([data-crm-guard]) > * { display: none !important; }
   body:has([data-crm-guard])::after { content: "Printing is disabled for this workspace."; }
 }
+
+/* Lead list: compact rows; select, actions and name stay pinned while scrolling sideways. */
+.lead-grid th { padding: 9px 12px; }
+.lead-grid td { padding: 7px 12px; }
+.lead-grid .lead-pin-1, .lead-grid .lead-pin-2, .lead-grid .lead-pin-3 { position: sticky; z-index: 1; background: var(--card); }
+.lead-grid th.lead-pin-1, .lead-grid th.lead-pin-2, .lead-grid th.lead-pin-3 { z-index: 3; background: var(--soft); }
+.lead-grid .lead-pin-1 { left: 0; width: 40px; min-width: 40px; }
+.lead-grid .lead-pin-2 { left: 40px; width: 88px; min-width: 88px; }
+.lead-grid .lead-pin-3 { left: 128px; box-shadow: 1px 0 0 var(--line); }
+.lead-grid tbody tr:hover td, .lead-grid tbody tr.is-selected td { background: var(--soft); }

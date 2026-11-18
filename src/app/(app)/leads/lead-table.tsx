@@ -10,7 +10,10 @@ import {
   Columns3,
   RefreshCw,
   SquarePen,
+  Zap,
 } from "lucide-react";
+import { QuickUpdate, type QuickStage, type QuickSubStage } from "./quick-update";
+import { useHoverPrefetch } from "@/components/hover-prefetch";
 import { Badge, Button, Empty, Modal, Select } from "@/components/ui";
 import { notify } from "@/components/toast";
 import type { Role } from "@/lib/types";
@@ -43,6 +46,14 @@ export interface LeadRow {
   followup: string;
   overdue: boolean;
   created: string;
+  stageId: string | null;
+  subStageId: string | null;
+  otherText: string;
+  remark: string;
+  lastUpdate: string;
+  lastUpdateAt: string;
+  /** Transferred to someone else: still visible to its primary owner, but read-only. */
+  viewOnly: boolean;
 }
 
 type Opt = { value: string; label: string };
@@ -54,6 +65,7 @@ const COLUMNS: {
   hidden?: boolean;
 }[] = [
   { key: "name", label: "Student Name", sort: "student_name" },
+  { key: "priority", label: "Priority" },
   { key: "mobile", label: "Mobile" },
   { key: "email", label: "Email" },
   { key: "university", label: "University" },
@@ -62,18 +74,19 @@ const COLUMNS: {
   { key: "stage", label: "Stage" },
     { key: "category", label: "Category" },
   { key: "subStage", label: "Sub Stage" },
+  { key: "remark", label: "Remark" },
+  { key: "lastUpdate", label: "Last update", sort: "last_activity_at" },
   { key: "source", label: "Source" },
   { key: "owner", label: "Lead Owner" },
   { key: "attempts", label: "Attempts", sort: "attempt_count" },
   { key: "calls", label: "Total calls", sort: "total_calls" },
   { key: "lastAttempt", label: "Last attempt", sort: "last_attempt_at" },
   { key: "followup", label: "Next Followup", sort: "next_followup_at" },
-  { key: "priority", label: "Priority", hidden: true },
   { key: "product", label: "Product", hidden: true },
   { key: "city", label: "City", hidden: true },
   { key: "created", label: "Created", sort: "created_at" },
 ];
-const STORE = "lead-list-columns-v2";
+const STORE = "lead-list-columns-v3";
 const STORE_EVENT = "lead-list-columns-changed";
 const DEFAULT_HIDDEN = JSON.stringify(
   COLUMNS.filter(
@@ -83,6 +96,9 @@ const DEFAULT_HIDDEN = JSON.stringify(
         "mobile",
         "course",
         "stage",
+        "subStage",
+        "remark",
+        "lastUpdate",
           "category",
         "owner",
         "followup",
@@ -124,14 +140,28 @@ export function LeadTable({
   role,
   stages,
   users,
+  stageList,
+  subStages,
 }: {
   rows: LeadRow[];
   params: Record<string, string | undefined>;
   role: Role;
   stages: Opt[];
   users: Opt[];
+  stageList: QuickStage[];
+  subStages: QuickSubStage[];
 }) {
   const router = useRouter();
+  const hoverPrefetch = useHoverPrefetch();
+  const [quick, setQuick] = useState<LeadRow | null>(null);
+  const editable = (r: LeadRow) => !r.viewOnly;
+  const quickCell = (r: LeadRow, content: React.ReactNode, emptyText: string) =>
+    editable(r) ? (
+      <button type="button" onClick={() => setQuick(r)} title="Click to update stage, sub stage or remark"
+        className="group/q max-w-[260px] rounded-md px-1 py-0.5 text-left hover:bg-soft">
+        {content || <span className="text-xs text-muted group-hover/q:text-brand">{emptyText}</span>}
+      </button>
+    ) : content;
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const hiddenJson = useSyncExternalStore(
     subscribeColumns,
@@ -192,8 +222,8 @@ export function LeadTable({
   const isStaff = role !== "agent";
 
   return (
-    <div>
-      <div className="flex flex-wrap items-center gap-2 border-b border-line p-3">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2">
         {selected.size > 0 ? (
           <>
             <span className="font-bold">{selected.size} selected</span>
@@ -347,11 +377,11 @@ export function LeadTable({
         </Modal>
       )}
 
-      <div className="max-h-[calc(100vh-340px)] min-h-64 overflow-auto">
-        <table className="table-grid w-full border-collapse">
+      <div className="max-h-[70vh] min-h-64 flex-1 overflow-auto lg:max-h-none lg:min-h-0">
+        <table className="table-grid lead-grid w-full border-collapse">
           <thead>
             <tr>
-              <th className="w-10">
+              <th className="lead-pin-1">
                 <input
                   type="checkbox"
                   aria-label="Select all rows"
@@ -363,9 +393,9 @@ export function LeadTable({
                   }
                 />
               </th>
-              <th className="w-10" />
+              <th className="lead-pin-2" />
               {cols.map((c) => (
-                <th key={c.key}>
+                <th key={c.key} className={c.key === "name" ? "lead-pin-3" : undefined}>
                   {c.sort ? (
                     <Link
                       href={sortHref(c.sort)}
@@ -391,8 +421,8 @@ export function LeadTable({
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className={cn(selected.has(r.id) && "bg-soft")}>
-                <td>
+              <tr key={r.id} className={cn(selected.has(r.id) && "is-selected")}>
+                <td className="lead-pin-1">
                   <input
                     type="checkbox"
                     aria-label={`Select ${r.name}`}
@@ -405,20 +435,31 @@ export function LeadTable({
                     }}
                   />
                 </td>
-                <td>
-                  <Link
-                    href={`/leads/${r.id}?returnTo=${encodeURIComponent(href({}))}`}
-                    aria-label={`Edit ${r.name}`}
-                    className="text-brand"
-                  >
-                    <SquarePen size={16} />
-                  </Link>
+                <td className="lead-pin-2">
+                  <div className="flex items-center gap-1">
+                    <Link
+                      href={`/leads/${r.id}?returnTo=${encodeURIComponent(href({}))}`}
+                      {...hoverPrefetch(`/leads/${r.id}?returnTo=${encodeURIComponent(href({}))}`)}
+                      aria-label={`Open ${r.name}`}
+                      title="Open lead"
+                      className="flex h-7 w-7 items-center justify-center rounded-md border border-line text-muted hover:border-brand hover:text-brand"
+                    >
+                      <SquarePen size={14} />
+                    </Link>
+                    {editable(r) && (
+                      <button type="button" onClick={() => setQuick(r)} aria-label={`Quick update ${r.name}`} title="Quick update: stage, sub stage, remark"
+                        className="flex h-7 w-7 items-center justify-center rounded-md bg-brand/10 text-brand hover:bg-brand hover:text-white dark:hover:text-bg">
+                        <Zap size={14} fill="currentColor" />
+                      </button>
+                    )}
+                  </div>
                 </td>
                 {cols.map((c) => (
-                  <td key={c.key}>
+                  <td key={c.key} className={c.key === "name" ? "lead-pin-3" : undefined}>
                     {c.key === "name" ? (
                       <Link
                         href={`/leads/${r.id}?returnTo=${encodeURIComponent(href({}))}`}
+                      {...hoverPrefetch(`/leads/${r.id}?returnTo=${encodeURIComponent(href({}))}`)}
                         className="lead-identity font-semibold hover:text-brand"
                       >
                         <span className="lead-avatar">
@@ -435,14 +476,25 @@ export function LeadTable({
                           </span>
                         </span>
                       </Link>
-                    ) : c.key === "stage" && r.stage ? (
-                      <Badge color={r.stageColor}>{r.stage}</Badge>
+                    ) : c.key === "stage" ? (
+                      quickCell(r, r.stage ? <Badge color={r.stageColor}>{r.stage}</Badge> : null, "Set stage")
                     ) : c.key === "priority" ? (
                       <Badge color={PRIORITY_COLOR[r.priority]}>
                         {r.priorityDescription || r.priority}
                       </Badge>
-                    ) : c.key === "subStage" && r.subStage ? (
-                      <Badge color={r.subStageColor}>{r.subStage}</Badge>
+                    ) : c.key === "subStage" ? (
+                      quickCell(r, r.subStage ? <Badge color={r.subStageColor}>{r.subStage}</Badge> : null, "Set sub stage")
+                    ) : c.key === "remark" ? (
+                      quickCell(r, r.remark ? <span className="line-clamp-2 text-xs" title={r.remark}>{r.remark}</span> : null, "+ Add remark")
+                    ) : c.key === "lastUpdate" ? (
+                      r.lastUpdate ? (
+                        <span className="block max-w-[280px]">
+                          <span className="line-clamp-2 text-xs" title={r.lastUpdate}>{r.lastUpdate}</span>
+                          <span className="block text-[10px] text-muted">{r.lastUpdateAt}</span>
+                        </span>
+                      ) : <span className="text-xs text-muted">No activity yet</span>
+                    ) : c.key === "owner" && r.viewOnly ? (
+                      <span>{r.owner}<span className="mt-0.5 block text-[10px] font-semibold text-amber-600">Transferred · view only</span></span>
                     ) : c.key === "followup" ? (
                       <span
                         className={cn(r.overdue && "font-bold text-red-600")}
@@ -459,6 +511,10 @@ export function LeadTable({
           </tbody>
         </table>
         {rows.length === 0 && <Empty>No leads match these filters.</Empty>}
+        {quick && (
+          <QuickUpdate onClose={() => setQuick(null)} stages={stageList} subStages={subStages}
+            lead={{ id: quick.id, name: quick.name, stageId: quick.stageId, subStageId: quick.subStageId, otherText: quick.otherText, remark: quick.remark }} />
+        )}
       </div>
     </div>
   );

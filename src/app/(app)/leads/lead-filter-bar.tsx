@@ -102,7 +102,6 @@ export function LeadFilterBar({
       </form>
       {quick("stage", "Stage", opts(lookups.stages))}
       {quick("source", "Source", opts(lookups.sources))}
-      {quick("churn", "Rechurn", [{ value: "yes", label: "Rechurned leads" }, { value: "no", label: "Never rechurned" }])}
       <Button
         variant="outline"
         onClick={() => setOpen((o) => !o)}

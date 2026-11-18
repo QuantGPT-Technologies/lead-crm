@@ -28,15 +28,20 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  // Refreshes the session cookie when it is about to expire.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Refreshes the session cookie when it is about to expire. getClaims checks the token locally
+  // when the project uses asymmetric signing keys, otherwise it asks Supabase Auth (like getUser).
+  const { data: claimData } = await supabase.auth.getClaims();
+  const user = claimData?.claims?.sub ? { id: claimData.claims.sub } : null;
   let signedIn = !!user && request.cookies.has(TAB_COOKIE);
   let partner = false;
-  if (user) {
+  // The role lookup costs two extra database round trips, so it runs only where the answer is
+  // needed: on the sign-in pages, to send an already signed-in user to the right workspace.
+  // Everywhere else the page or action checks the account itself (getSession for staff,
+  // getPartnerSession for partners), including inactive accounts and partners on staff pages.
+  const loginPage = pathname === "/login" || pathname === "/partner/login";
+  if (user && signedIn && loginPage) {
     const { data: role, error } = await supabase.rpc("app_role");
-    // Partners have no staff role; they are let in only while active and fully verified.
+    // Partners have no staff role; they are let in only while active and verified.
     if (!error && !role) partner = (await supabase.rpc("partner_portal_access")).data === true;
     if (error || (!role && !partner)) {
       await supabase.auth.signOut({ scope: "local" });
@@ -62,10 +67,6 @@ export async function proxy(request: NextRequest) {
   }
   if (signedIn && (pathname === "/login" || pathname === "/partner/login") && request.nextUrl.searchParams.get("fresh") !== "1") {
     return redirectWithCookies(new URL(partner ? "/partner" : "/dashboard", request.url));
-  }
-  // Partners stay inside their portal; staff pages would only bounce them back anyway.
-  if (signedIn && partner && !partnerArea && !isPublic) {
-    return redirectWithCookies(new URL("/partner", request.url));
   }
   return response;
 }

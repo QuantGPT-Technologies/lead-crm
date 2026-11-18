@@ -1,4 +1,5 @@
 "use client";
+import { useHoverPrefetch } from "@/components/hover-prefetch";
 import { DateFilter } from "@/components/date-filter";
 
 
@@ -29,8 +30,10 @@ import {
   UserCheck,
   Users,
   Video,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
+import { QuickUpdate } from "../quick-update";
 import { Badge, Button, Card, Empty, Select, btn } from "@/components/ui";
 import { notify } from "@/components/toast";
 import type { Activity, Lead, Lookups, Role, Row } from "@/lib/types";
@@ -110,8 +113,14 @@ export interface EditorProps {
   posts: Row[];
   enrollment: Row | null;
   opportunities: Row[];
-  prevId: string | null;
-  nextId: string | null;
+  prevId?: string | null;
+  nextId?: string | null;
+  /** Previous / next buttons rendered by the page (streamed), in place of prevId / nextId. */
+  nav?: React.ReactNode;
+  /** Small chips shown on the top line (partner lead, transferred). */
+  notes?: React.ReactNode;
+  /** Transferred away from this user: they can view but not change it. */
+  readOnly?: boolean;
   emailLive: boolean;
   postConfigured: boolean;
   meetings: LeadMeeting[];
@@ -130,6 +139,7 @@ export function LeadEditor(p: EditorProps) {
   >("activity");
   const [mode, setMode] = useState<PanelMode>("call");
   const [pending, start] = useTransition();
+  const [quick, setQuick] = useState(false);
 
   const name = (
     list: { id: string; name?: string; full_name?: string }[],
@@ -142,100 +152,99 @@ export function LeadEditor(p: EditorProps) {
   const rel = (row: Row, key: string) =>
     (row[key] as { full_name?: string } | null)?.full_name ?? "";
 
+  const initials = lead.student_name.split(/\s+/).slice(0, 2).map((n) => n[0]).join("");
+  const subStage = lead.other_fields?.sub_stage_id || name(lookups.subStages, lead.sub_stage_id);
+  const subColor = lookups.subStages.find((s) => s.id === lead.sub_stage_id)?.color;
+  const overdue = !!lead.next_followup_at && new Date(lead.next_followup_at) < new Date();
+  const course = lead.other_fields?.course_id || name(lookups.courses, lead.course_id);
+  const owner = name(lookups.users, lead.owner_id) || "Unassigned";
+  const pickAction = (m: PanelMode) => { setMode(m); if (lower === "meetings") setLower("info"); };
+
   return (
-    <div className="space-y-5">
-      <Link
-        href={p.returnTo}
-        className="inline-flex items-center gap-2 text-xs text-muted hover:text-brand"
-      >
-        <ArrowLeft size={14} /> All leads
-      </Link>
-      <DateFilter label="History dates" />
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <span className="lead-avatar !h-14 !w-14 !rounded-2xl !text-lg">
-            {lead.student_name
-              .split(/\s+/)
-              .slice(0, 2)
-              .map((n) => n[0])
-              .join("")}
-          </span>
-          <div>
-            <p className="eyebrow mb-1">{lead.lead_no}</p>
-            <h1 className="text-[28px] font-semibold">{lead.student_name}</h1>
-            <p className="mt-1 text-xs text-muted">
-              {(lead.other_fields?.course_id || name(lookups.courses, lead.course_id)) ||
-                "Exploring possibilities"}{" "}
-              · {name(lookups.users, lead.owner_id) || "Unassigned"}
-            </p>
+    <div className="space-y-3">
+      {/* Top line: way back, lead number, notes and previous / next */}
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Link href={p.returnTo} className="inline-flex items-center gap-1.5 font-semibold text-muted hover:text-brand">
+          <ArrowLeft size={14} /> Leads
+        </Link>
+        <span className="text-muted/50">/</span>
+        <span className="font-mono text-muted">{lead.lead_no}</span>
+        {p.notes}
+        <div className="ml-auto flex items-center gap-1">
+          {p.nav ?? <>
+            <NavArrow returnTo={p.returnTo} id={p.prevId ?? null} dir="prev" />
+            <NavArrow returnTo={p.returnTo} id={p.nextId ?? null} dir="next" />
+          </>}
+        </div>
+      </div>
+
+      {/* Header: who, where they are, how to reach them, and the key numbers */}
+      <Card className="p-4">
+        <div className="flex flex-wrap items-start gap-4">
+          <span className="lead-avatar !h-12 !w-12 !rounded-2xl !text-base">{initials}</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="truncate text-2xl font-semibold leading-tight">{lead.student_name}</h1>
+              <Badge color={({ hot: "#dc2626", warm: "#d97706", cold: "#0284c7", other: "#64748b" } as Record<string, string>)[lead.priority]}>{lead.other_fields?.priority || lead.priority}</Badge>
+              {p.readOnly ? (
+                <>
+                  <Badge color={stage?.color}>{lead.other_fields?.stage_id || stage?.name || "New lead"}</Badge>
+                  {subStage && <Badge color={subColor}>{subStage}</Badge>}
+                </>
+              ) : (
+                <button type="button" onClick={() => setQuick(true)} title="Update stage, sub stage or remark"
+                  className="group inline-flex items-center gap-1 rounded-lg px-1 py-0.5 hover:bg-soft">
+                  <Badge color={stage?.color}>{lead.other_fields?.stage_id || stage?.name || "Set stage"}</Badge>
+                  {subStage && <Badge color={subColor}>{subStage}</Badge>}
+                  <Zap size={13} className="text-muted group-hover:text-brand" />
+                </button>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-muted">{[course || "Exploring possibilities", owner, `Created ${fmtDate(lead.created_at)}`].join(" · ")}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+              {lead.mobile && <a href={`tel:${lead.mobile}`} className="inline-flex items-center gap-1.5 font-semibold hover:text-brand"><Phone size={14} className="text-muted" />{lead.mobile}</a>}
+              {lead.alt_mobile && <a href={`tel:${lead.alt_mobile}`} className="inline-flex items-center gap-1.5 hover:text-brand"><Smartphone size={14} className="text-muted" />{lead.alt_mobile}</a>}
+              {lead.email && <a href={`mailto:${lead.email}`} className="inline-flex min-w-0 items-center gap-1.5 hover:text-brand"><Mail size={14} className="text-muted" /><span className="truncate">{lead.email}</span></a>}
+              {lead.city && <span className="inline-flex items-center gap-1.5 text-muted"><MapPin size={14} />{lead.city}</span>}
+            </div>
+            {lead.remarks && <p className="mt-2 line-clamp-2 max-w-3xl rounded-lg bg-soft px-3 py-1.5 text-xs" title={lead.remarks}><b>Remark:</b> {lead.remarks}</p>}
+          </div>
+          <div className="shrink-0">
+            {me.role === "admin" ? (
+              <Select
+                aria-label="Lead category"
+                options={[{ value: "none", label: "Uncategorized" }, ...CATEGORY_OPTIONS]}
+                placeholder={null}
+                value={lead.category ?? "none"}
+                disabled={pending}
+                className="!h-9 !w-40"
+                onChange={(e) => start(async () => { notify(await moveCategory([lead.id], e.target.value === "none" ? null : e.target.value)); })}
+              />
+            ) : <Badge>{lead.category ? `Category ${lead.category}` : "Uncategorized"}</Badge>}
           </div>
         </div>
-        <Badge color={stage?.color}>{stage?.name ?? "New lead"}</Badge>
-          {me.role === "admin" ? (
-            <Select
-              aria-label="Lead category"
-              options={[{ value: "none", label: "Uncategorized" }, ...CATEGORY_OPTIONS]}
-              placeholder={null}
-              value={lead.category ?? "none"}
-              disabled={pending}
-              className="!w-44"
-              onChange={(e) => start(async () => { notify(await moveCategory([lead.id], e.target.value === "none" ? null : e.target.value)); })}
-            />
-          ) : <Badge>{lead.category ? `Category ${lead.category}` : "Uncategorized"}</Badge>}
-      </div>
-      <div className="flex flex-wrap gap-2" aria-label="Lead actions">
-        <button type="button" aria-pressed={lower === "meetings"} onClick={() => {
-          setLower("meetings");
-          requestAnimationFrame(() => document.getElementById("lead-meetings")?.scrollIntoView({ block: "start", behavior: "smooth" }));
-        }} className={btn(lower === "meetings" ? "primary" : "outline")}>
-          <Video size={15} /> Schedule Google Meet
-        </button>
-        {RAIL.filter(([m]) => m !== "assign" || isStaff).map(
-          ([m, label, Icon]) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={mode === m && lower === "info"}
-              onClick={() => {
-                setMode(m);
-                setLower("info");
-              }}
-              className={btn(
-                mode === m && lower === "info" ? "primary" : "outline",
-              )}
-            >
-              <Icon size={15} />
-              {label}
-            </button>
-          ),
-        )}
-      </div>
-      <div className="min-w-0 space-y-5">
-        <Card className="p-5">
-          <div className="flex flex-wrap items-center gap-1">
-            <div className="flex flex-1 flex-wrap gap-1" role="group">
-              {TABS.map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
+        <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+          <Fact label="Next follow-up" value={fmtDateTime(lead.next_followup_at) || "Not scheduled"} tone={overdue ? "bad" : undefined} />
+          <Fact label="Last attempt" value={fmtDateTime(lead.last_attempt_at) || "Not attempted"} />
+          <Fact label="Attempts" value={String(lead.attempt_count)} />
+          <Fact label="Calls" value={String(lead.total_calls ?? p.calls.length)} />
+          <Fact label="Source" value={lead.other_fields?.source_id || name(lookups.sources, lead.source_id) || "—"} />
+          <Fact label="Allotted" value={fmtDateTime(lead.allotted_at) || "—"} />
+        </dl>
+      </Card>
 
-                  aria-pressed={tab === key}
-                  onClick={() => setTab(key)}
-                  className={cn(
-                    "rounded-lg px-3 py-2 text-xs font-semibold",
-                    tab === key
-                      ? "bg-soft text-brand"
-                      : "text-muted hover:text-brand",
-                  )}
-                >
+      <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="min-w-0 space-y-3">
+          {/* Details */}
+          <Card className="p-4">
+            <div className="flex flex-wrap gap-1 border-b border-line pb-2" role="group" aria-label="Lead details">
+              {TABS.map(([key, label]) => (
+                <button key={key} type="button" aria-pressed={tab === key} onClick={() => setTab(key)}
+                  className={cn("rounded-lg px-3 py-1.5 text-xs font-semibold", tab === key ? "bg-soft text-brand" : "text-muted hover:text-brand")}>
                   {label}
                 </button>
               ))}
             </div>
-            <NavArrow returnTo={p.returnTo} id={p.prevId} label="Previous lead" icon={ChevronLeft} />
-            <NavArrow returnTo={p.returnTo} id={p.nextId} label="Next lead" icon={ChevronRight} />
-          </div>
-
           <div className="mt-3">
             {tab === "overview" && (
               <div className="grid gap-2 lg:grid-cols-3">
@@ -316,36 +325,25 @@ export function LeadEditor(p: EditorProps) {
               <RechurnForm lead={lead} lookups={lookups} isStaff={isStaff} isAdmin={me.role === "admin"} />
             )}
           </div>
-        </Card>
+          </Card>
 
-        <div className="flex flex-wrap gap-1" role="group">
-          {LOWER_TABS.filter(([key]) => key !== "posts" || me.role === "admin").map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-
-              aria-pressed={lower === key}
-              onClick={() => setLower(key)}
-              className={cn(
-                "rounded-lg px-4 py-2.5 text-xs font-semibold",
-                lower === key
-                  ? "bg-card text-brand"
-                  : "text-muted hover:text-brand",
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {lower === "meetings" && <div id="lead-meetings" className="scroll-mt-24"><MeetingsPanel lead={lead} meetings={p.meetings} connection={p.meetingConnection}
-          me={me} timezone={p.meetingTimezone} now={p.meetingNow} /></div>}
-        {lower === "info" && (
-          <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
-            <Card className="p-4">
-              <h2 className="mb-3 text-lg font-semibold">
-                The conversation so far
-              </h2>
+          {/* Activity */}
+          <Card className="p-4">
+            <div className="mb-2 flex flex-wrap items-center gap-2 border-b border-line pb-2">
+              <div className="flex flex-wrap gap-1" role="group" aria-label="Activity">
+                {LOWER_TABS.filter(([key]) => key !== "posts" || me.role === "admin").map(([key, label]) => (
+                  <button key={key} type="button" aria-pressed={lower === key} onClick={() => setLower(key)}
+                    className={cn("rounded-lg px-3 py-1.5 text-xs font-semibold", lower === key ? "bg-soft text-brand" : "text-muted hover:text-brand")}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="ml-auto"><DateFilter label="History" className="mb-0 items-center border-0 bg-transparent p-0" /></div>
+            </div>
+            {lower === "meetings" && <div id="lead-meetings" className="scroll-mt-24"><MeetingsPanel lead={lead} meetings={p.meetings} connection={p.meetingConnection}
+              me={me} timezone={p.meetingTimezone} now={p.meetingNow} /></div>}
+            {lower === "info" && (
+              <div>
               <div className="flex gap-1 border-b border-line" role="group">
                 {(["activity", "productivity", "communication"] as const).map(
                   (f) => (
@@ -501,20 +499,8 @@ export function LeadEditor(p: EditorProps) {
                   ))}
                 </ul>
               )}
-            </Card>
-
-            <ActionPanel
-              mode={mode}
-              lead={lead}
-              lookups={lookups}
-              me={me}
-              enrollment={p.enrollment}
-              opportunities={p.opportunities}
-              emailLive={p.emailLive}
-            />
-          </div>
-        )}
-
+              </div>
+            )}
         {lower === "history" && (
           <DataTable
             empty="No stage or ownership changes yet."
@@ -559,7 +545,7 @@ export function LeadEditor(p: EditorProps) {
 
         {lower === "posts" && (
           <div className="space-y-3">
-            <Card className="flex flex-wrap items-center gap-3 p-4">
+            <div className="flex flex-wrap items-center gap-3 rounded-xl bg-soft/60 p-3">
               <p className="flex-1 text-muted">
                 {p.postConfigured
                   ? "Send this lead to the external system configured by your admin (for example a university lead API)."
@@ -573,7 +559,7 @@ export function LeadEditor(p: EditorProps) {
               >
                 <Send size={15} /> Post lead
               </Button>
-            </Card>
+            </div>
             <DataTable
               empty="This lead has not been posted yet."
               head={["When", "By", "Target", "Status", "HTTP", "Response"]}
@@ -588,25 +574,77 @@ export function LeadEditor(p: EditorProps) {
             />
           </div>
         )}
+          </Card>
+        </div>
+
+        {/* Actions stay in view while you read the history */}
+        <aside className="order-first space-y-3 xl:order-none xl:sticky xl:top-[92px]">
+          <Card className="grid grid-cols-5 gap-1 p-2" aria-label="Lead actions">
+            {RAIL.filter(([m]) => m !== "assign" || isStaff).map(([m, label, Icon]) => (
+              <button key={m} type="button" aria-pressed={mode === m && lower !== "meetings"} onClick={() => pickAction(m)} title={label}
+                className={cn("flex flex-col items-center gap-1 rounded-lg px-1 py-2 text-[10px] font-semibold leading-tight",
+                  mode === m && lower !== "meetings" ? "bg-brand text-white dark:text-bg" : m === "call" ? "bg-brand/10 text-brand hover:bg-brand/20" : "text-muted hover:bg-soft hover:text-fg")}>
+                <Icon size={16} />
+                <span className="w-full truncate text-center">{label.replace("Follow-up / Task", "Follow-up")}</span>
+              </button>
+            ))}
+            <button type="button" aria-pressed={lower === "meetings"} title="Schedule Google Meet" onClick={() => {
+              setLower("meetings");
+              requestAnimationFrame(() => document.getElementById("lead-meetings")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+            }} className={cn("flex flex-col items-center gap-1 rounded-lg px-1 py-2 text-[10px] font-semibold leading-tight",
+              lower === "meetings" ? "bg-brand text-white dark:text-bg" : "text-muted hover:bg-soft hover:text-fg")}>
+              <Video size={16} /><span>Meet</span>
+            </button>
+          </Card>
+          <ActionPanel
+            mode={mode}
+            lead={lead}
+            lookups={lookups}
+            me={me}
+            enrollment={p.enrollment}
+            opportunities={p.opportunities}
+            emailLive={p.emailLive}
+          />
+        </aside>
       </div>
+
+      {quick && (
+        <QuickUpdate onClose={() => setQuick(false)}
+          stages={lookups.stages.map((s) => ({ id: s.id, name: s.name, color: s.color }))}
+          subStages={lookups.subStages.map((s) => ({ id: s.id, name: s.name, stage_id: s.stage_id }))}
+          lead={{ id: lead.id, name: lead.student_name, stageId: lead.stage_id, subStageId: lead.sub_stage_id, otherText: lead.other_fields?.stage_id ?? "", remark: lead.remarks ?? "" }} />
+      )}
     </div>
   );
 }
 
-function NavArrow({
+function Fact({ label, value, tone }: { label: string; value: string; tone?: "bad" }) {
+  return (
+    <div className="min-w-0 rounded-xl bg-soft/60 px-3 py-2">
+      <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">{label}</dt>
+      <dd className={cn("mt-0.5 truncate text-sm font-semibold", tone === "bad" && "text-red-600")} title={value}>{value}</dd>
+    </div>
+  );
+}
+
+/** Previous / next lead buttons; the page streams them in once the neighbours are known. */
+export function NavArrow({
   returnTo,
   id,
-  label,
-  icon: Icon,
+  dir,
 }: {
   returnTo: string;
   id: string | null;
-  label: string;
-  icon: LucideIcon;
+  dir: "prev" | "next";
 }) {
+  const Icon = dir === "prev" ? ChevronLeft : ChevronRight;
+  const label = dir === "prev" ? "Previous lead" : "Next lead";
+  const hoverPrefetch = useHoverPrefetch();
+  const target = id ? `/leads/${id}?returnTo=${encodeURIComponent(returnTo)}` : "";
   return id ? (
     <Link
-      href={`/leads/${id}?returnTo=${encodeURIComponent(returnTo)}`}
+      href={target}
+      {...hoverPrefetch(target)}
       title={label}
       aria-label={label}
       className={btn("outline", "h-8 !px-2")}
@@ -845,7 +883,7 @@ export function DataTable({
   empty: string;
 }) {
   return (
-    <Card className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-xl border border-line">
       <table className="table-grid w-full border-collapse">
         <thead>
           <tr>
@@ -867,6 +905,6 @@ export function DataTable({
         </tbody>
       </table>
       {rows.length === 0 && <Empty>{empty}</Empty>}
-    </Card>
+    </div>
   );
 }

@@ -214,15 +214,16 @@ export async function updateLead(id: string, section: LeadSection, values: Value
   if (error) return { error: dbError(error) };
 
   const stageChanged = "stage_id" in patch;
+  const reassignedFrom = "owner_id" in patch && lead.owner_id && patch.owner_id && lead.owner_id !== patch.owner_id;
   await logActivity(supabase, [
     {
       lead_id: id,
       actor_id: profile.id,
-      type: stageChanged ? "stage_change" : "owner_id" in patch ? "assigned" : "updated",
+      type: stageChanged ? "stage_change" : reassignedFrom ? "rechurn" : "owner_id" in patch ? "assigned" : "updated",
       summary: stageChanged
         ? `${profile.full_name} moved ${lead.student_name} to ${display("stage_id", patch.stage_id, lk)}`
         : "owner_id" in patch
-          ? `${profile.full_name} assigned ${lead.student_name} to ${patch.owner_id ? display("owner_id", patch.owner_id, lk) : "the unassigned pool"}`
+          ? `${profile.full_name} ${reassignedFrom ? "reassigned" : "assigned"} ${lead.student_name} to ${patch.owner_id ? display("owner_id", patch.owner_id, lk) : "the unassigned pool"}${reassignedFrom ? " (rechurned)" : ""}`
           : `${profile.full_name} updated ${section} details of ${lead.student_name}`,
       details: { fields: changes },
     },
@@ -281,8 +282,10 @@ async function changeLeadOwner(ids: string[], ownerId: string | null, onlyUnassi
   const admin = createAdminClient();
   const allotted_at = ownerId ? new Date().toISOString() : null;
   const assigned: string[] = [];
+  const previousOwner = new Map<string, string | null>();
   for (const part of chunk(parsed.data, 150)) {
-    const { data: visible, error } = await supabase.from("leads").select("id").in("id", part);
+    const { data: visible, error } = await supabase.from("leads").select("id, owner_id").in("id", part);
+    (visible ?? []).forEach((l) => previousOwner.set(l.id as string, (l.owner_id as string | null) ?? null));
     if (error) return { error: dbError(error) };
     const visibleIds = (visible ?? []).map((l) => l.id as string);
     if (!visibleIds.length) continue;
@@ -298,12 +301,19 @@ async function changeLeadOwner(ids: string[], ownerId: string | null, onlyUnassi
     return done({ message: "No unassigned leads remain in your selection. Existing assignments were kept." });
   }
   const who = ownerId ? display("owner_id", ownerId, lk) : "the unassigned pool";
+  // Taking a lead from one person and giving it to another counts as a rechurn (database trigger,
+  // upgrade-018); say so in the history.
+  const reassigned = (id: string) => { const before = previousOwner.get(id); return !!before && !!ownerId && before !== ownerId; };
   await logActivity(
     supabase,
-    assigned.map((id) => ({ lead_id: id, actor_id: profile.id, type: "assigned", summary: `${profile.full_name} assigned this lead to ${who}` })),
+    assigned.map((id) => reassigned(id)
+      ? { lead_id: id, actor_id: profile.id, type: "rechurn", summary: `${profile.full_name} reassigned this lead to ${who} (rechurned)`,
+          details: { fields: { "Previous Owner": display("owner_id", previousOwner.get(id) ?? null, lk), "New Owner": who } } }
+      : { lead_id: id, actor_id: profile.id, type: "assigned", summary: `${profile.full_name} assigned this lead to ${who}` }),
   );
   const skipped = onlyUnassigned ? new Set(parsed.data).size - assigned.length : 0;
-  return done({ message: `${assigned.length} lead(s) assigned to ${who}${skipped ? `; ${skipped} skipped because they are already assigned or unavailable` : ""}` });
+  const rechurned = assigned.filter(reassigned).length;
+  return done({ message: `${assigned.length} lead(s) assigned to ${who}${rechurned ? ` (${rechurned} moved to Rechurned because they already had an owner)` : ""}${skipped ? `; ${skipped} skipped because they are already assigned or unavailable` : ""}` });
 }
 
 export async function bulkStage(ids: string[], stageId: string): Promise<ActionResult> {
@@ -677,4 +687,57 @@ export async function postLead(leadId: string): Promise<ActionResult> {
   await supabase.from("lead_posts").insert({ lead_id: leadId, target: url, status, http_status: http, response, posted_by: profile.id });
   await logActivity(supabase, [{ lead_id: leadId, actor_id: profile.id, type: "post", summary: `${profile.full_name} posted this lead (${status})` }]);
   return done(status === "success" ? { message: "Lead posted" } : { error: `Post failed${http ? ` (HTTP ${http})` : ""}: ${response.slice(0, 120)}` });
+}
+
+// ------------------------------------------------------- quick update ---
+
+/**
+ * Stage, sub stage and remark changed straight from the list or the board, without opening the
+ * lead. Runs as the signed-in user, so only someone allowed to edit the lead can save.
+ */
+export async function quickUpdateLead(id: string, v: { stageId: string; subStageId?: string | null; otherText?: string; remark?: string }): Promise<ActionResult> {
+  const { supabase, profile } = await getSession();
+  if (!isUuid(id)) return { error: "Lead not found" };
+  const lk = await getLookups();
+  const stage = lk.stages.find((s) => s.id === v.stageId);
+  if (!stage) return { error: "Choose a stage" };
+  const subs = lk.subStages.filter((s) => s.stage_id === stage.id);
+  const subStageId = subs.length ? (subs.some((s) => s.id === v.subStageId) ? v.subStageId! : null) : null;
+  if (subs.length && !subStageId) return { error: "Choose a sub stage" };
+  const isOther = stage.name.toLowerCase() === "other";
+  const otherText = typeof v.otherText === "string" ? v.otherText.trim() : "";
+  if (isOther && (!otherText || otherText.length > 200)) return { error: "Describe the other stage (1–200 characters)" };
+  const remark = typeof v.remark === "string" ? v.remark.trim() : undefined;
+  if (remark !== undefined && remark.length > 2000) return { error: "Keep the remark under 2000 characters" };
+
+  const { data: lead } = await supabase.from("leads").select("student_name, owner_id, stage_id, sub_stage_id, remarks, other_fields").eq("id", id).maybeSingle();
+  if (!lead) return { error: "Lead not found" };
+  // A lead transferred away from this user stays visible to them, but only its owner side may change it.
+  if (profile.role === "agent" && lead.owner_id !== profile.id) return { error: "This lead now belongs to someone else, so you can view it but not change it" };
+
+  const custom = { ...((lead.other_fields ?? {}) as Record<string, string>) };
+  delete custom.sub_stage_id;
+  if (isOther) custom.stage_id = otherText; else delete custom.stage_id;
+  const patch: Record<string, unknown> = { stage_id: stage.id, sub_stage_id: subStageId, other_fields: custom };
+  if (remark !== undefined) patch.remarks = remark || null;
+
+  const changes: Record<string, string> = {};
+  if (lead.stage_id !== stage.id || ((lead.other_fields as Record<string, string> | null)?.stage_id ?? "") !== (isOther ? otherText : ""))
+    changes.Stage = `${display("stage_id", lead.stage_id, lk)} → ${isOther ? `${stage.name} (${otherText})` : stage.name}`;
+  if ((lead.sub_stage_id ?? null) !== subStageId) changes["Sub Stage"] = `${display("sub_stage_id", lead.sub_stage_id, lk)} → ${display("sub_stage_id", subStageId, lk)}`;
+  if (remark !== undefined && (lead.remarks ?? "") !== remark) changes.Remarks = `${lead.remarks || "N/A"} → ${remark || "N/A"}`;
+  if (!Object.keys(changes).length) return { message: "No changes to save" };
+
+  const { data: saved, error } = await supabase.from("leads").update(patch).eq("id", id).select("id");
+  if (error) return { error: dbError(error) };
+  if (!saved?.length) return { error: "You can view this lead but not change it" };
+  const stageChanged = "Stage" in changes;
+  await logActivity(supabase, [{
+    lead_id: id,
+    actor_id: profile.id,
+    type: stageChanged ? "stage_change" : "updated",
+    summary: stageChanged ? `${profile.full_name} moved ${lead.student_name} to ${stage.name}` : `${profile.full_name} updated ${lead.student_name}`,
+    details: { fields: changes, ...(remark && "Remarks" in changes ? { text: remark } : {}) },
+  }]);
+  return done({ message: "Lead updated" });
 }

@@ -12,18 +12,17 @@ interface Row { label: string; total: number; attempts: number; calls: number; c
 export default async function ReportsPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
   const { supabase } = await requireRole("admin", "manager");
-  const lookups = await getLookups();
   const range = reportRange(sp);
   const dim = DIMENSIONS.some(([key]) => key === one(sp.by)) ? one(sp.by)! : "stage";
   const filters = Object.fromEntries(["owner", "source", "stage", "attempt", "churn"].map(key => [key, one(sp[key])]));
-  const { rows, error } = await allReportRows<Row>(supabase, "crm_lead_report", { p_from: range.from.toISOString(), p_to: range.to.toISOString(), p_dim: dim, p_owner: reportId(filters.owner), p_source: reportId(filters.source), p_stage: reportId(filters.stage), p_attempt: filters.attempt ?? "", p_churn: filters.churn ?? "" });
+  const [lookups, { rows, error }] = await Promise.all([getLookups(), allReportRows<Row>(supabase, "crm_lead_report", { p_from: range.from.toISOString(), p_to: range.to.toISOString(), p_dim: dim, p_owner: reportId(filters.owner), p_source: reportId(filters.source), p_stage: reportId(filters.stage), p_attempt: filters.attempt ?? "", p_churn: filters.churn ?? "" })]);
   const statuses = [...new Set([...lookups.stages.map(stage => stage.name), ...rows.flatMap(row => Object.keys(row.statuses ?? {}))])];
   const label = DIMENSIONS.find(([key]) => key === dim)![1];
   const records: Record<string, string | number>[] = rows.map(row => ({ [label]: row.label, Leads: Number(row.total), Attempts: Number(row.attempts), Calls: Number(row.calls), Contacted: Number(row.contacted), Enrolled: Number(row.enrolled), Lost: Number(row.lost), ...Object.fromEntries(statuses.map(status => [`Status: ${status}`, Number(row.statuses?.[status] ?? 0)])) }));
   const columns = [label, "Leads", "Attempts", "Calls", "Contacted", "Enrolled", "Lost", ...statuses.map(status => `Status: ${status}`)];
   const params = { ...filters, by: dim, from: range.fromStr, to: range.toStr };
   return <>
-    <PageHeader title="Lead reports">{!error && records.length > 0 && <a href={`data:text/csv;charset=utf-8,${encodeURIComponent(toCsv(records))}`} download={`lead-report-${range.fromStr}-${range.toStr}.csv`} className={btn("outline")}>Export CSV</a>}<Link href={viewHref("/reports/agents", params)} className={btn("outline")}>Employee report</Link></PageHeader>
+    <PageHeader title="Lead reports">{!error && records.length > 0 && <a href={`data:text/csv;charset=utf-8,${encodeURIComponent(toCsv(records))}`} download={`lead-report-${range.fromStr}-${range.toStr}.csv`} className={btn("outline")}>Export CSV</a>}<Link href={viewHref("/reports/pivot", { from: range.fromStr, to: range.toStr })} className={btn("outline")}>Pivot report</Link><Link href={viewHref("/reports/agents", params)} className={btn("outline")}>Employee report</Link></PageHeader>
     <DateFilter label="Lead creation dates" allowAll={false} defaults={{ from: range.fromStr, to: range.toStr }} />
     <form className="mb-4 flex flex-wrap gap-2"><input type="hidden" name="by" value={dim} /><input type="hidden" name="from" value={range.fromStr} /><input type="hidden" name="to" value={range.toStr} />
       <Select name="owner" aria-label="Employee" defaultValue={filters.owner ?? ""} options={lookups.users.map(user => ({ value: user.id, label: user.full_name }))} placeholder="All employees" className="!w-44" />

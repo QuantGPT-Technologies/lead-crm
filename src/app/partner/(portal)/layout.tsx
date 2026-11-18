@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Handshake, LogOut } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { WorkspaceGuard } from "@/components/workspace-guard";
+import { TabCheckScript } from "@/components/tab-check-script";
 import { env } from "@/lib/env";
 import { getPartnerSession } from "@/lib/partner-auth";
 import { partnerSignOut } from "../login/actions";
@@ -10,6 +11,8 @@ import { PartnerNav } from "./partner-nav";
 export default async function PartnerLayout({ children }: { children: React.ReactNode }) {
   const { partner } = await getPartnerSession();
   return (
+    <>
+    <TabCheckScript />
     <WorkspaceGuard loginPath="/partner/login?fresh=1">
       <div className="min-h-screen">
         <header className="border-b border-line bg-card">
@@ -36,5 +39,6 @@ export default async function PartnerLayout({ children }: { children: React.Reac
         <main className="mx-auto max-w-6xl px-4 py-7 sm:px-6">{children}</main>
       </div>
     </WorkspaceGuard>
+    </>
   );
 }

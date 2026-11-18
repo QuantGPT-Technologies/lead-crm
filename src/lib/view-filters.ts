@@ -1,6 +1,6 @@
 import { addDays, isDateString, startOfDay, tzDateString } from "@/lib/utils";
 
-export const LEAD_SORTS = ["created_at", "student_name", "attempt_count", "total_calls", "last_attempt_at", "next_followup_at", "lead_no", "updated_at", "rechurn_count"];
+export const LEAD_SORTS = ["created_at", "student_name", "attempt_count", "total_calls", "last_attempt_at", "next_followup_at", "lead_no", "updated_at", "rechurn_count", "last_activity_at"];
 export const LEAD_DATE_FIELDS = ["created_at", "last_attempt_at", "next_followup_at", "last_rechurned_at", "allotted_at"];
 export function tableSort(sort: string | undefined, direction: string | undefined, allowed: string[], defaultSort: string, defaultAsc = false) {
   return { column: sort && allowed.includes(sort) ? sort : defaultSort, ascending: direction === "asc" || (!direction && defaultAsc) };

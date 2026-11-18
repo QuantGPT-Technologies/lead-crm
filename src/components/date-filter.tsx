@@ -2,8 +2,9 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { periodDates } from "@/lib/view-filters";
+import { cn } from "@/lib/utils";
 
-export function DateFilter({ label = "Date", field = false, allowAll = true, defaults }: { label?: string; field?: boolean; allowAll?: boolean; defaults?: { from: string; to: string } }) {
+export function DateFilter({ label = "Date", field = false, allowAll = true, defaults, className }: { label?: string; field?: boolean; allowAll?: boolean; defaults?: { from: string; to: string }; className?: string }) {
   const pathname = usePathname();
   const current = useSearchParams();
   const router = useRouter();
@@ -15,7 +16,7 @@ export function DateFilter({ label = "Date", field = false, allowAll = true, def
     }
     router.push(`${pathname}?${next}`);
   };
-  return <form className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-line bg-card p-3" onSubmit={event => {
+  return <form className={cn("mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-line bg-card p-3", className)} onSubmit={event => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     apply({ from: String(data.get("from") ?? ""), to: String(data.get("to") ?? ""), ...(field ? { dateField: String(data.get("dateField")) } : {}) });

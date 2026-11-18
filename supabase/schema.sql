@@ -1560,3 +1560,200 @@ where not exists (select 1 from public.lead_sources where lower(name) = 'partner
 notify pgrst, 'reload schema';
 commit;
 -- END PARTNER PROGRAM
+
+-- BEGIN PIVOT REPORT (upgrade-015)
+-- Pivot report (Reports -> Pivot). Apply after upgrade-014. Safe to reapply.
+--
+-- crm_pivot_key() turns one lead and one field name into the value the pivot groups by.
+-- Both report functions run as the caller (security invoker), so row-level security still
+-- limits each person to the leads they are allowed to see.
+begin;
+
+create or replace function public.crm_pivot_key(l public.leads, d text, tz text) returns text
+language sql stable set search_path = public as $$
+  select coalesce(case d
+    when 'stage'         then coalesce(l.stage_id::text, '')
+    when 'sub_stage'     then coalesce(l.sub_stage_id::text, '')
+    when 'attempt'       then case when l.attempt_count >= 10 then '10+' else l.attempt_count::text end
+    when 'calls'         then case when l.total_calls >= 10 then '10+' else l.total_calls::text end
+    when 'created_day'   then to_char(l.created_at at time zone tz, 'YYYY-MM-DD')
+    when 'created_month' then to_char(l.created_at at time zone tz, 'YYYY-MM')
+    when 'activity_day'  then to_char(l.last_activity_at at time zone tz, 'YYYY-MM-DD')
+    when 'followup_day'  then to_char(l.next_followup_at at time zone tz, 'YYYY-MM-DD')
+    when 'remark'        then left(btrim(l.remarks), 120)
+    when 'source'        then coalesce(l.source_id::text, '')
+    when 'owner'         then coalesce(l.owner_id::text, '')
+    when 'university'    then coalesce(l.university_id::text, '')
+    when 'course'        then coalesce(l.course_id::text, '')
+    when 'city'          then initcap(btrim(l.city))
+    when 'state'         then initcap(btrim(l.state))
+    when 'priority'      then coalesce(nullif(l.other_fields->>'priority', ''), l.priority)
+    when 'category'      then l.category
+    when 'rechurn'       then case when l.rechurn_count > 0 then 'yes' else 'no' end
+    when 'dnd'           then case when l.dnd then 'yes' else 'no' end
+    when 'partner'       then coalesce(l.partner_id::text, '')
+  end, '')
+$$;
+
+-- Counts per combination of the chosen fields, for leads created in [p_from, p_to).
+create or replace function public.crm_pivot(p_from timestamptz, p_to timestamptz, p_dims text[], p_tz text default 'Asia/Kolkata')
+returns table(keys text[], n bigint)
+language sql stable security invoker set search_path = public as $$
+  select array(select public.crm_pivot_key(l, u.d, p_tz) from unnest(p_dims) with ordinality u(d, i) order by u.i), count(*)
+  from public.leads l
+  where l.created_at >= p_from and l.created_at < p_to
+  group by 1
+$$;
+
+-- The leads behind one cell: every field in p_dims must have the matching value in p_keys.
+create or replace function public.crm_pivot_leads(p_from timestamptz, p_to timestamptz, p_dims text[], p_keys text[], p_tz text default 'Asia/Kolkata')
+returns setof public.leads
+language sql stable security invoker set search_path = public as $$
+  select l.* from public.leads l
+  where l.created_at >= p_from and l.created_at < p_to
+    and cardinality(p_dims) = cardinality(p_keys)
+    and not exists (
+      select 1 from unnest(p_dims, p_keys) x(d, k)
+      where public.crm_pivot_key(l, x.d, p_tz) is distinct from x.k)
+  order by l.created_at desc, l.id
+$$;
+
+revoke all on function public.crm_pivot_key(public.leads, text, text) from public, anon;
+revoke all on function public.crm_pivot(timestamptz, timestamptz, text[], text) from public, anon;
+revoke all on function public.crm_pivot_leads(timestamptz, timestamptz, text[], text[], text) from public, anon;
+grant execute on function public.crm_pivot_key(public.leads, text, text) to authenticated, service_role;
+grant execute on function public.crm_pivot(timestamptz, timestamptz, text[], text) to authenticated, service_role;
+grant execute on function public.crm_pivot_leads(timestamptz, timestamptz, text[], text[], text) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+commit;
+-- END PIVOT REPORT
+
+-- BEGIN PIVOT FILTERS (upgrade-016)
+-- Pivot report filters (e.g. only one employee). Apply after upgrade-015. Safe to reapply.
+--
+-- p_filters is a JSON object of field -> list of allowed values, for example
+-- {"owner": ["<employee id>"], "stage": ["<stage id>", "<stage id>"]}. A lead is counted only
+-- when, for every field listed, its value is one of the allowed values. Field names and values
+-- are the same as crm_pivot_key() returns.
+begin;
+
+drop function if exists public.crm_pivot(timestamptz, timestamptz, text[], text);
+drop function if exists public.crm_pivot_leads(timestamptz, timestamptz, text[], text[], text);
+
+create or replace function public.crm_pivot_match(l public.leads, p_filters jsonb, tz text) returns boolean
+language sql stable set search_path = public as $$
+  select p_filters is null or p_filters = '{}'::jsonb or not exists (
+    select 1 from jsonb_each(p_filters) f(d, allowed)
+    where not (allowed ? public.crm_pivot_key(l, f.d, tz)))
+$$;
+
+create or replace function public.crm_pivot(p_from timestamptz, p_to timestamptz, p_dims text[], p_tz text default 'Asia/Kolkata', p_filters jsonb default '{}')
+returns table(keys text[], n bigint)
+language sql stable security invoker set search_path = public as $$
+  select array(select public.crm_pivot_key(l, u.d, p_tz) from unnest(p_dims) with ordinality u(d, i) order by u.i), count(*)
+  from public.leads l
+  where l.created_at >= p_from and l.created_at < p_to
+    and public.crm_pivot_match(l, p_filters, p_tz)
+  group by 1
+$$;
+
+create or replace function public.crm_pivot_leads(p_from timestamptz, p_to timestamptz, p_dims text[], p_keys text[], p_tz text default 'Asia/Kolkata', p_filters jsonb default '{}')
+returns setof public.leads
+language sql stable security invoker set search_path = public as $$
+  select l.* from public.leads l
+  where l.created_at >= p_from and l.created_at < p_to
+    and cardinality(p_dims) = cardinality(p_keys)
+    and public.crm_pivot_match(l, p_filters, p_tz)
+    and not exists (
+      select 1 from unnest(p_dims, p_keys) x(d, k)
+      where public.crm_pivot_key(l, x.d, p_tz) is distinct from x.k)
+  order by l.created_at desc, l.id
+$$;
+
+revoke all on function public.crm_pivot_match(public.leads, jsonb, text) from public, anon;
+revoke all on function public.crm_pivot(timestamptz, timestamptz, text[], text, jsonb) from public, anon;
+revoke all on function public.crm_pivot_leads(timestamptz, timestamptz, text[], text[], text, jsonb) from public, anon;
+grant execute on function public.crm_pivot_match(public.leads, jsonb, text) to authenticated, service_role;
+grant execute on function public.crm_pivot(timestamptz, timestamptz, text[], text, jsonb) to authenticated, service_role;
+grant execute on function public.crm_pivot_leads(timestamptz, timestamptz, text[], text[], text, jsonb) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+commit;
+-- END PIVOT FILTERS
+
+-- BEGIN PRIMARY OWNER (upgrade-017)
+-- Primary owner. Apply after upgrade-016. Safe to reapply.
+--
+-- A lead remembers the person it first belonged to (primary_owner_id). When it is transferred
+-- or rechurned to someone else, the primary owner can still SEE it (and its history). Only the
+-- current owner (and their manager / admins) can change it: the update policy is unchanged.
+begin;
+
+alter table public.leads add column if not exists primary_owner_id uuid references public.profiles (id) on delete set null;
+create index if not exists leads_primary_owner_idx on public.leads (primary_owner_id) where primary_owner_id is not null;
+
+-- Existing leads: the current owner becomes the primary owner.
+update public.leads set primary_owner_id = owner_id where primary_owner_id is null and owner_id is not null;
+
+-- The first owner a lead gets becomes its primary owner. Signed-in users calling the database
+-- directly cannot change it; the app sets it only through this trigger or the service role.
+create or replace function public.set_primary_owner() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if tg_op = 'UPDATE' and current_user in ('authenticated', 'anon') then
+    new.primary_owner_id := old.primary_owner_id;
+  elsif tg_op = 'INSERT' and current_user in ('authenticated', 'anon') then
+    new.primary_owner_id := null;
+  end if;
+  if new.primary_owner_id is null then new.primary_owner_id := new.owner_id; end if;
+  return new;
+end $$;
+drop trigger if exists leads_primary_owner on public.leads;
+create trigger leads_primary_owner before insert or update on public.leads
+  for each row execute function public.set_primary_owner();
+
+-- Read access: as before (admin / manager's team / agent's own), plus leads whose primary owner
+-- is the caller or, for managers, someone in their active team.
+alter policy leads_select on public.leads using (
+  case (select public.app_role())
+    when 'admin' then true
+    when 'manager' then owner_id = (select auth.uid()) or primary_owner_id = (select auth.uid())
+      or owner_id in (select p.id from public.profiles p where p.manager_id = (select auth.uid()) and p.is_active)
+      or primary_owner_id in (select p.id from public.profiles p where p.manager_id = (select auth.uid()) and p.is_active)
+    when 'agent' then owner_id = (select auth.uid()) or primary_owner_id = (select auth.uid())
+    else false end
+);
+
+notify pgrst, 'reload schema';
+commit;
+-- END PRIMARY OWNER
+
+-- BEGIN REASSIGN RECHURN (upgrade-018)
+-- Reassigning counts as a rechurn. Apply after upgrade-017. Safe to reapply.
+--
+-- When a lead that already has an owner is given to a DIFFERENT person, it is counted as
+-- rechurned (rechurn_count + 1, last_rechurned_at = now), so it moves to the Rechurned tab.
+-- Not counted: first assignment of an unassigned lead, moving a lead to the unassigned pool,
+-- and the Re-engage action (which counts the rechurn itself).
+-- The trigger name sorts after leads_protect, so it runs after that guard and applies to every
+-- way an owner can change (app, assignments page, direct database calls).
+begin;
+
+create or replace function public.count_reassign_as_rechurn() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if old.owner_id is not null and new.owner_id is not null and new.owner_id <> old.owner_id
+     and new.rechurn_count = old.rechurn_count then
+    new.rechurn_count := old.rechurn_count + 1;
+    new.last_rechurned_at := now();
+  end if;
+  return new;
+end $$;
+drop trigger if exists leads_zz_reassign_rechurn on public.leads;
+create trigger leads_zz_reassign_rechurn before update of owner_id on public.leads
+  for each row execute function public.count_reassign_as_rechurn();
+
+notify pgrst, 'reload schema';
+commit;
+-- END REASSIGN RECHURN

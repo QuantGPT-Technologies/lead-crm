@@ -13,16 +13,19 @@ let batchUnavailableUntil = 0;
 export const getLookups = cache(async (): Promise<Lookups> => {
     const { supabase, profile } = await getSession();
     // Scope dropdowns even while an older database is waiting for the RLS migration.
-    const members = profile.role === "admin" ? null : profile.role === "manager"
-      ? await createAdminClient().from("profiles").select("id").eq("manager_id", profile.id).eq("is_active", true)
-      : null;
-    if (members?.error) throw new Error("Could not load your team");
-    const allowed = profile.role === "admin" ? null : new Set([profile.id, ...(members?.data ?? []).map(p => p.id as string)]);
-    const scopedUsers = (users: Lookups["users"]) => allowed ? users.filter(user => allowed.has(user.id)) : users;
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error("Your session expired. Please sign in again.");
   const lookupClient = createLookupClient(session.access_token);
-  const batched = Date.now() < batchUnavailableUntil ? null : await lookupClient.rpc("crm_lookups", undefined, { get: true });
+  // A manager's team list and the dropdown data are fetched together, not one after the other.
+  const [members, batched] = await Promise.all([
+    profile.role === "manager"
+      ? createAdminClient().from("profiles").select("id").eq("manager_id", profile.id).eq("is_active", true).then((r) => r)
+      : Promise.resolve(null),
+    Date.now() < batchUnavailableUntil ? Promise.resolve(null) : lookupClient.rpc("crm_lookups", undefined, { get: true }).then((r) => r),
+  ]);
+    if (members?.error) throw new Error("Could not load your team");
+    const allowed = profile.role === "admin" ? null : new Set([profile.id, ...(members?.data ?? []).map(p => p.id as string)]);
+    const scopedUsers = (users: Lookups["users"]) => allowed ? users.filter(user => allowed.has(user.id)) : users;
   if (batched && !batched.error && batched.data) {
     const lookups = batched.data as Lookups;
       lookups.users = scopedUsers(lookups.users);

@@ -7,7 +7,6 @@ type NavigationWindow = Window & { navigation?: EventTarget };
 type NavigationEvent = Event & { navigationType?: string; destination?: { sameDocument?: boolean } };
 
 export function WorkspaceGuard({ children, loginPath = "/login?fresh=1" }: { children: React.ReactNode; loginPath?: string }) {
-  const [ready, setReady] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
@@ -33,7 +32,7 @@ export function WorkspaceGuard({ children, loginPath = "/login?fresh=1" }: { chi
         if (disposed) return;
         if (response.status === 401 || response.status === 403) { obscure(); login(); return; }
         if (!response.ok) throw new Error("Session check unavailable");
-        setReady(true); setUnavailable(false);
+        document.documentElement.dataset.crmTab = "1"; setUnavailable(false);
         if (document.visibilityState === "visible" && document.hasFocus()) delete document.documentElement.dataset.crmObscured;
       } catch {
         if (!disposed) { obscure(); setUnavailable(true); }
@@ -86,7 +85,7 @@ export function WorkspaceGuard({ children, loginPath = "/login?fresh=1" }: { chi
     const blocked = ["copy", "cut", "contextmenu", "dragstart"];
     blocked.forEach(name => document.addEventListener(name, prevent, true));
     void validate();
-    const timer = setInterval(() => { if (document.visibilityState === "visible") void validate(); }, 30000);
+    const timer = setInterval(() => { if (document.visibilityState === "visible") void validate(); }, 120000);
     return () => {
       disposed = true; clearInterval(timer);
       nav?.removeEventListener("navigate", navigation);
@@ -105,6 +104,7 @@ export function WorkspaceGuard({ children, loginPath = "/login?fresh=1" }: { chi
   return <div data-crm-guard>
     <div className="crm-print-block">Printing is disabled for this workspace.</div>
     <div className="crm-privacy-shield" role="status">{unavailable ? "Connection unavailable. Reconnecting securely…" : "CRM hidden while this window is inactive."}</div>
-    {ready && !unavailable ? <div className="crm-protected-content">{children}</div> : <div className="flex min-h-screen items-center justify-center text-muted" role="status">{unavailable ? "Connection unavailable. Reconnecting securely…" : "Checking this tab’s session…"}</div>}
+    {unavailable ? <div className="flex min-h-screen items-center justify-center text-muted" role="status">Connection unavailable. Reconnecting securely…</div>
+      : <div className="crm-protected-content">{children}</div>}
   </div>;
 }

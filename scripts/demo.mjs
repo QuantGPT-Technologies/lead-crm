@@ -96,6 +96,10 @@ await configureLocalKanban(db, { once: true });
 await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-012-workflow-reports.sql"), "utf8"));
 await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-013-report-performance.sql"), "utf8"));
 await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-014-partner-program.sql"), "utf8"));
+await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-015-pivot-report.sql"), "utf8"));
+await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-016-pivot-filters.sql"), "utf8"));
+await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-017-primary-owner.sql"), "utf8"));
+await db.query(readFileSync(path.join(ROOT, "supabase", "upgrade-018-reassign-rechurn.sql"), "utf8"));
 if (firstRun) {
   await db.query("update public.stages set is_active=true where lower(name)='other'");
   await db.query("update public.sub_stages set is_active=true where lower(name)='other'");

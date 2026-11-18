@@ -7,11 +7,14 @@ export function Modal({
   onClose,
   children,
   wide,
+  full,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
+  /** Fills the window; the body becomes a flex column so its content can scroll inside. */
+  full?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
@@ -66,7 +69,7 @@ export function Modal({
   }, []);
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#14231c]/55 p-4 pt-[8vh] backdrop-blur-sm"
+      className={cn("fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#14231c]/55 p-4 backdrop-blur-sm", !full && "pt-[8vh]")}
       onMouseDown={onClose}
     >
       <div
@@ -77,11 +80,11 @@ export function Modal({
         aria-label={title}
         className={cn(
           "w-full rounded-2xl border border-line bg-card shadow-2xl outline-none",
-          wide ? "max-w-3xl" : "max-w-lg",
+          full ? "flex h-[calc(100dvh-2rem)] max-w-[1800px] flex-col" : wide ? "max-w-3xl" : "max-w-lg",
         )}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-line px-6 py-5">
+        <div className={cn("flex shrink-0 items-center justify-between border-b border-line", full ? "px-4 py-3" : "px-6 py-5")}>
           <h2 className="text-lg font-semibold">{title}</h2>
           <button
             type="button"
@@ -92,7 +95,7 @@ export function Modal({
             <X size={18} />
           </button>
         </div>
-        <div className="p-6">{children}</div>
+        <div className={full ? "flex min-h-0 flex-1 flex-col" : "p-6"}>{children}</div>
       </div>
     </div>
   );

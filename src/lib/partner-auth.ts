@@ -8,15 +8,17 @@ import type { Partner } from "@/lib/types";
 /** Signed-in, verified partner for the current request. Staff are sent to their own workspace. */
 export const getPartnerSession = cache(async () => {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/partner/login");
+  // Verified locally when the project uses asymmetric signing keys; see getSession.
+  const { data: claimData } = await supabase.auth.getClaims();
+  const userId = claimData?.claims?.sub;
+  if (!userId) redirect("/partner/login");
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session || !(await readTabSession(user.id, session.access_token))) redirect("/partner/login?fresh=1");
+  if (!session || !(await readTabSession(userId, session.access_token))) redirect("/partner/login?fresh=1");
 
   const admin = createAdminClient();
-  const { data: partner } = await admin.from("partners").select("*").eq("id", user.id).maybeSingle();
+  const { data: partner } = await admin.from("partners").select("*").eq("id", userId).maybeSingle();
   if (!partner) {
-    const { data: staff } = await admin.from("profiles").select("id").eq("id", user.id).maybeSingle();
+    const { data: staff } = await admin.from("profiles").select("id").eq("id", userId).maybeSingle();
     if (staff) redirect("/dashboard");
     await supabase.auth.signOut({ scope: "local" });
     redirect("/partner/login");

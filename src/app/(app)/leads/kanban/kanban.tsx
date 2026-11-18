@@ -2,9 +2,11 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { AlarmClock, Phone, PhoneCall } from "lucide-react";
+import { AlarmClock, Phone, PhoneCall, Zap } from "lucide-react";
 import { toast } from "@/components/toast";
-import { Modal, Button } from "@/components/ui";
+import { Badge, Modal, Button } from "@/components/ui";
+import { QuickUpdate, type QuickStage, type QuickSubStage } from "../quick-update";
+import { useHoverPrefetch } from "@/components/hover-prefetch";
 import { cn, fmtDateTime } from "@/lib/utils";
 import { viewHref } from "@/lib/view-filters";
 import { moveStage } from "../actions";
@@ -25,6 +27,14 @@ export interface KanbanCard {
   owner: string;
   course: string;
   overdue: boolean;
+  stageId: string;
+  subStageId: string | null;
+  subStage: string;
+  subStageColor: string;
+  otherText: string;
+  remark: string;
+  /** Transferred to someone else: visible to its primary owner, but read-only. */
+  viewOnly: boolean;
 }
 interface Column {
   id: string;
@@ -46,13 +56,17 @@ export function Kanban({
   perColumn,
   filters,
   stages,
+  subStages,
 }: {
   columns: Column[];
   perColumn: number;
   filters: Record<string, string | undefined>;
-  stages: { id: string; name: string }[];
+  stages: QuickStage[];
+  subStages: QuickSubStage[];
 }) {
   const [columns, setColumns] = useState(initial);
+  const hoverPrefetch = useHoverPrefetch();
+  const [quick, setQuick] = useState<KanbanCard | null>(null);
   const [dragging, setDragging] = useState<{
     card: string;
     from: string;
@@ -108,7 +122,7 @@ export function Kanban({
   }
 
   return (
-    <div className="flex gap-3 overflow-x-auto pb-4">
+    <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto pb-2">
       {otherStage && <Modal title="Other status" onClose={() => setOtherStage(null)}><form className="space-y-3" onSubmit={event => { event.preventDefault(); const draft = otherStage; setOtherStage(null); drop(draft.to, draft.moving, draft.text.trim()); }}>
         <label className="block text-xs font-semibold">Specify status<input autoFocus required maxLength={200} value={otherStage.text} onChange={event => setOtherStage({ ...otherStage, text: event.target.value })} className="input mt-2" /></label>
         <Button type="submit" disabled={!otherStage.text.trim()}>Move lead</Button>
@@ -124,13 +138,13 @@ export function Kanban({
           onDragLeave={() => setOver((o) => (o === col.id ? null : o))}
           onDrop={() => drop(col.id)}
           className={cn(
-            "kanban-lane flex max-h-[calc(100vh-260px)] w-[300px] shrink-0 flex-col border",
+            "kanban-lane flex max-h-[75vh] w-[300px] shrink-0 flex-col border lg:max-h-none",
             over === col.id
               ? "border-brand ring-2 ring-brand/30"
               : "border-transparent",
           )}
         >
-          <header className="flex items-center justify-between px-4 py-4 text-xs font-semibold">
+          <header className="flex shrink-0 items-center justify-between px-4 py-2.5 text-xs font-semibold">
               <span className="flex min-w-0 flex-1 items-center gap-2 pr-2">
               <span
                   className="h-2 w-2 shrink-0 rounded-full"
@@ -164,6 +178,7 @@ export function Kanban({
                   />
                   <Link
                     href={`/leads/${card.id}?returnTo=${encodeURIComponent(viewHref("/leads/kanban", filters))}`}
+                    {...hoverPrefetch(`/leads/${card.id}?returnTo=${encodeURIComponent(viewHref("/leads/kanban", filters))}`)}
                     className="min-w-0 flex-1 truncate font-bold hover:text-brand"
                   >
                     {card.name}
@@ -172,6 +187,12 @@ export function Kanban({
                 <p className="mt-0.5 truncate text-xs text-muted">
                   {card.course || card.leadNo}
                 </p>
+                {(card.subStage || card.remark) && (
+                  <div className="mt-2 space-y-1">
+                    {card.subStage && <Badge color={card.subStageColor}>{card.subStage}</Badge>}
+                    {card.remark && <p className="line-clamp-2 rounded-md bg-soft px-2 py-1 text-[11px]" title={card.remark}>{card.remark}</p>}
+                  </div>
+                )}
                 {card.mobile && (
                   <a
                     href={`tel:${card.mobile}`}
@@ -202,7 +223,15 @@ export function Kanban({
                   <p className="line-clamp-2" title={card.lastLog ?? ""}>Last log: {card.lastLog || "No activity yet"}</p>
                   {card.lastLogAt && <p>{fmtDateTime(card.lastLogAt)}</p>}
                 </div>
-                <label className="mt-4 flex items-center gap-2 border-t border-line pt-3 text-[10px] text-muted">
+                {card.viewOnly ? (
+                  <p className="mt-3 border-t border-line pt-2 text-[10px] font-semibold text-amber-600">Transferred to {card.owner} · view only</p>
+                ) : (
+                <div className="mt-3 flex items-center gap-2 border-t border-line pt-3">
+                <button type="button" draggable={false} onClick={() => setQuick(card)}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] font-semibold hover:border-brand hover:text-brand">
+                  <Zap size={11} /> Update
+                </button>
+                <label className="flex min-w-0 flex-1 items-center gap-2 text-[10px] text-muted">
                   <span className="shrink-0">Move to</span>
                   <select
                     aria-label={`Move ${card.name} to stage`}
@@ -220,6 +249,8 @@ export function Kanban({
                     ))}
                   </select>
                 </label>
+                </div>
+                )}
               </article>
             ))}
             {col.cards.length === 0 && (
@@ -238,6 +269,10 @@ export function Kanban({
           </div>
         </section>
       ))}
+      {quick && (
+        <QuickUpdate onClose={() => setQuick(null)} stages={stages} subStages={subStages}
+          lead={{ id: quick.id, name: quick.name, stageId: quick.stageId, subStageId: quick.subStageId, otherText: quick.otherText, remark: quick.remark }} />
+      )}
     </div>
   );
 }

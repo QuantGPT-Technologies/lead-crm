@@ -148,7 +148,7 @@ async function visibleLeadIds(filters: LeadFilters, limit: number) {
   return ids;
 }
 
-async function setOwner(ids: string[], ownerId: string | null, actor: { id: string; full_name: string }, summary: string, onlyUnassigned = false) {
+async function setOwner(ids: string[], ownerId: string | null, actor: { id: string; full_name: string }, summary: string, onlyUnassigned = false, type = "assigned") {
   const admin = createAdminClient();
   const allotted_at = ownerId ? new Date().toISOString() : null;
   const assigned: string[] = [];
@@ -159,7 +159,7 @@ async function setOwner(ids: string[], ownerId: string | null, actor: { id: stri
     if (error) throw new Error(error.message);
     assigned.push(...(data ?? []).map((lead) => lead.id as string));
   }
-  await logActivity(admin, assigned.map((id) => ({ lead_id: id, actor_id: actor.id, type: "assigned", summary })));
+  await logActivity(admin, assigned.map((id) => ({ lead_id: id, actor_id: actor.id, type, summary })));
   return assigned;
 }
 
@@ -209,8 +209,9 @@ export async function transferLeads(v: { from: string; to: string; count: number
     const ids = await visibleLeadIds({ owner: from.id, attempt: v.untouchedOnly ? "0" : undefined, from: v.fromDate, to: v.toDate, dateField: "allotted_at" }, count);
     if (!ids.length) return { error: `${from.full_name} has no matching leads` };
     const target = to ? to.full_name : "the unassigned pool";
-    await setOwner(ids, to?.id ?? null, profile, `${profile.full_name} moved this lead from ${from.full_name} to ${target}`);
-    return done({ message: `${ids.length} lead(s) moved from ${from.full_name} to ${target}` });
+    // Moving leads from one person to another counts as a rechurn (database trigger, upgrade-018).
+    await setOwner(ids, to?.id ?? null, profile, `${profile.full_name} moved this lead from ${from.full_name} to ${target}${to ? " (rechurned)" : ""}`, false, to ? "rechurn" : "assigned");
+    return done({ message: `${ids.length} lead(s) moved from ${from.full_name} to ${target}${to ? "; they now appear under Rechurned" : ""}` });
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Transfer failed" };
   }

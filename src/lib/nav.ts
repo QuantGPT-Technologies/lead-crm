@@ -36,6 +36,7 @@ export const NAV: NavItem[] = [
     label: "Insights & outreach",
     children: [
         { label: "Reports", href: "/reports", icon: "BarChart3", roles: STAFF },
+        { label: "Pivot report", href: "/reports/pivot", icon: "Table2", roles: STAFF },
       {
         label: "Team performance",
         href: "/reports/agents",
